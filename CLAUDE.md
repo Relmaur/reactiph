@@ -32,7 +32,7 @@ reactiph/
 │   ├── Transpiler/    PHP→JS transpiler (nikic/php-parser-based) + stdlib shim
 │   └── Bridge/         BridgeInterface + DefaultBridge (asset/RPC abstraction)
 ├── packages/
-│   └── runtime-js/     Client runtime: hydration, Proxy-based reactivity, DOM patching
+│   └── runtime-js/     Client runtime: hydration, event delegation, marker-based DOM patching
 ├── bin/reactiph         CLI: compile, watch, build
 ├── docs/
 │   ├── adr/             Architecture decision records — the "why" behind locked-in choices
@@ -131,6 +131,28 @@ section is the short version.
   control-flow syntax exists yet to need the latter). Live-verified: a
   bound button's visible count patches 3 → 4 → 5 across real clicks,
   matching the transpiled method's real state. (ADR 0017)
+- **`BridgeInterface`** (`assetUrl()`, `rpcEndpointUrl()`, `handleRpc()`)
+  is the seam ADR 0004 named, now implemented. `handleRpc()` takes/returns
+  plain arrays — no HTTP-framework type — and every implementation is
+  expected to delegate to `Bridge\RpcHandler`, which does the real
+  dispatch work once (validate payload, resolve component + method via
+  `Component\OwnMethods`, apply state, call the real PHP method, return
+  new state) so a future `reactiph/wordpress-bridge` only has to write its
+  own request/response marshaling, not reimplement validation.
+  **No mechanism yet marks a method as server-only vs. client-transpiled**
+  (a real fork, decided with the user) — `ComponentTranspiler` and
+  `RpcHandler` treat the exact same method set (`OwnMethods::of()`)
+  RPC-callable and client-transpiled alike; a method needing real
+  server-side work (file I/O, eventually a DB call) must stay on a
+  component that's never passed to `ComponentTranspiler` at all.
+  `DefaultBridge` targets PHP's built-in server; `examples/bridge-server.php`
+  is a real running front controller (`php -S`), live-verified via curl
+  (asset routes, RPC round-trip with genuine server-side persistence
+  across requests, error handling) and a real browser (Counter's Part 5
+  DOM patching now loading its runtime JS from actual Bridge-served HTTP
+  responses; a second demo component, `Guestbook`, round-tripping a
+  file-backed counter through RPC with no client transpilation involved
+  at all). (ADR 0018)
 
 ## Build order
 
@@ -168,6 +190,7 @@ php examples/render.php    # run Part 1's manual smoke test
 php examples/blog.php      # run Part 2's manual smoke test
 php examples/errors.php    # run the exception-foundation smoke test
 php examples/hydrate.php   # generate examples/hydrate-output.html (Parts 3 & 5) — open it in a browser
+php -S localhost:8080 examples/bridge-server.php   # Part 6 end-to-end Bridge demo — open http://localhost:8080/
 ```
 
 CI (`.github/workflows/ci.yml`) runs `test`, `analyse`, and `cs-check` on

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Reactiph\Transpiler;
 
 use Reactiph\Component\BaseComponent;
+use Reactiph\Component\OwnMethods;
 
 /**
  * Assembles a component class's own methods into one JS "component
@@ -14,10 +15,9 @@ use Reactiph\Component\BaseComponent;
  * time; this is what turns that into something a client runtime can
  * actually invoke by name.
  *
- * Only methods *declared on the component's own class* are transpiled —
- * inherited `BaseComponent` methods (`render()`, `template()`) are
- * framework-internal, never client-side logic, and are excluded by name
- * regardless of where they're declared.
+ * Transpiles exactly the methods {@see OwnMethods} enumerates — the same
+ * set {@see \Reactiph\Bridge\RpcHandler} treats as RPC-callable (ADR 0018);
+ * there is no mechanism yet to mark a method as one but not the other.
  *
  * Also assembles an `expressions` map alongside `methods`, one entry per
  * marker index `BaseComponent::compiledTemplateFor()` recorded for this
@@ -30,30 +30,17 @@ use Reactiph\Component\BaseComponent;
  */
 final class ComponentTranspiler
 {
-    private const EXCLUDED_METHODS = ['template', 'render', '__construct'];
-
     /**
      * @param class-string<BaseComponent> $componentClass
      */
     public function transpileComponent(string $componentClass): string
     {
-        $reflection = new \ReflectionClass($componentClass);
         $phpToJs = new PhpToJs();
 
         /** @var array<string, string> $methodsJs */
         $methodsJs = [];
 
-        foreach ($reflection->getMethods() as $method) {
-            if ($method->getDeclaringClass()->getName() !== $componentClass) {
-                continue;
-            }
-
-            $name = $method->getName();
-
-            if (in_array($name, self::EXCLUDED_METHODS, true) || str_starts_with($name, '__')) {
-                continue;
-            }
-
+        foreach (OwnMethods::of($componentClass) as $name => $method) {
             $methodsJs[$name] = $phpToJs->transpileMethod(MethodSourceReader::read($method));
         }
 

@@ -7,83 +7,77 @@ history. See `CLAUDE.md` for the full build order and working agreement.
 
 ## Current part
 
-**Part 5 — Reactive client runtime: complete and verified.** Both
-click-to-real-transpiled-method-execution (slice 1) and DOM patching after
-a state change (slice 2) are built, tested, and live-verified in a
-browser.
+**Part 6 — Bridge abstraction + `DefaultBridge`: complete and verified.**
+`BridgeInterface` (ADR 0004's two named concerns: serving the runtime JS
+asset, exposing an RPC endpoint for server-bound method calls) is now
+implemented, live-verified against a real running PHP built-in server, not
+just unit tests.
 
-Before building slice 2, three real open design questions were surfaced to
-the user and discussed rather than picked unilaterally: how the runtime
-knows what to update, whether "reactive" means a `Proxy` or an explicit
-trigger, and how wide "minimal scoped patch" is. The user chose to discuss
-tradeoffs rather than take the first recommendation outright; all three
-were settled together (see ADR 0017) since the second and third follow
-from the first.
+One real fork was surfaced to the user before implementation: how a
+component method gets marked "server-bound" vs. "client-transpiled."
+Decided: no new marking mechanism yet — every component method is both,
+using the exact same enumeration (`Component\OwnMethods`, new). A method
+needing genuine server-only behavior must live on a component that's
+never passed to `ComponentTranspiler` at all (see ADR 0018).
 
-- **DOM patching via SSR comment markers**, not a second template→JS
-  compiler and not a `Proxy`. `Template\Compiler` wraps every
-  text-position `{$expr}` in an `<!--rN--><!--/rN-->` marker pair —
-  emitted only when the rendering component's `hydrationId` is set, so a
-  plain SSR-only render is byte-identical to before this part (confirmed:
-  all 129 pre-existing tests passed unmodified). `Template\Compiler::compile()`
-  now returns `Template\CompiledTemplate` (a `render` closure plus an
-  ordered `expressions` array of raw PHP source, one per marker index)
-  instead of a bare `Closure`.
-- **`BaseComponent::compiledTemplateFor(class-string): CompiledTemplate`**
-  (new, public, static) — the compile-and-cache path `render()` already
-  had, now also reachable without an existing instance, so
-  `ComponentTranspiler` can read a class's expression list. This imposes
-  a new implicit constraint: every component class must be constructible
-  with no arguments (a cache-miss compile builds a throwaway instance
-  just to call `template()`).
-- **`PhpToJs::transpileExpression()`** (new, public) — transpiles one
-  standalone PHP expression via the existing (already expression-shaped,
-  already private) `compileExpr()`, independent of `transpileMethod()`'s
-  statement/local-variable machinery.
-- **Real bug caught and fixed**: a template `{$count}` and a method-body
-  `$count` mean different things to the transpiler — the former is sugar
-  for an SSR-extracted property, the latter a real local. Reusing
-  `compileExpr()` naively compiled `{$count}` to a bare, unbound `count`
-  identifier. Fixed with an `$inTemplateExpression` mode flag; documented
-  in `docs/gotchas.md` (Part 5 section) and ADR 0017.
-- **`ComponentTranspiler`** now assembles an `expressions` map alongside
-  `methods`, each entry a JS thunk wrapped in `__phpString()` to match
-  SSR's `(string)` cast exactly (same shim ADR 0014 introduced).
-- **`hydrate.js`** recomputes and patches every expression marker for a
-  component right after its bound method returns — the same synchronous
-  checkpoint the delegated click listener already had. The marker-finding
-  `TreeWalker` explicitly refuses to descend into a nested element with
-  its own `data-reactiph-id`, since marker indices are only unique per
-  component *class*, not page-wide.
-- `examples/hydrate.php` now also loads `packages/runtime-js/php-runtime.js`
-  (a real, previously-latent gap — the demo only worked without it because
-  `increment()` doesn't happen to call any runtime helper; expression
-  thunks now genuinely need `__phpString()`).
-- **Live-verified in an isolated headless browser**: clicked the bound
-  button twice on the regenerated demo; the visible `<span class="count">`
-  text patched 3 → 4 → 5 in step with the real transpiled `increment()`
-  mutating state, matching real PHP — and the marker comment pair survived
-  both patches intact.
-- 140 PHPUnit tests passing (11 new this slice). PHPStan (level 8) and
+- **`Bridge\BridgeInterface`** — `assetUrl()`, `rpcEndpointUrl()`,
+  `handleRpc()`, deliberately free of any HTTP-framework type (plain
+  arrays in/out for RPC).
+- **`Bridge\RpcHandler`** (new) — the host-agnostic RPC dispatch logic
+  every `BridgeInterface::handleRpc()` is expected to delegate to:
+  validates the payload, resolves the component class (must be a real
+  `BaseComponent` subclass) and method (must be in `OwnMethods::of()`),
+  applies incoming state (rejects any key that isn't an actually-declared
+  property), calls the real method, returns the new state.
+- **`Component\OwnMethods`** (new) — extracted from `ComponentTranspiler`'s
+  previous inline reflection loop; now the single shared definition of
+  "externally invocable method" for both client transpilation and RPC.
+  **Caught a real gap while extracting it**: the old loop had no
+  visibility filter, so a `private`/`protected` helper on a component's
+  own class was already being silently transpiled to client JS since Part
+  5 — now filtered to `ReflectionMethod::IS_PUBLIC` explicitly, which
+  matters much more now that the same set is also RPC-reachable.
+- **`Bridge\DefaultBridge`** — targets PHP's built-in development server.
+  `serveAsset()` (not part of `BridgeInterface` — asset-serving is
+  inherently host-specific) serves `php-runtime.js`/`hydrate.js` from
+  disk; per-component JS stays inlined into the page as it already was in
+  Part 5, not promoted to a third asset type.
+- **`examples/bridge-server.php`** (new) — a real front controller run via
+  `php -S localhost:PORT examples/bridge-server.php`, serving two
+  components: `Counter` (Part 5's demo, unchanged behavior, now loading
+  its runtime JS from actual Bridge-served HTTP responses) and `Guestbook`
+  (new) — a component with no client-transpiled methods at all, whose
+  `sign()` does real file I/O (outside the transpiler's allow-listed
+  subset — ADR 0011) and is wired to the RPC endpoint by hand-written page
+  JS, not new template syntax.
+- **Live-verified against a real running server**: `curl`'d the asset
+  routes (200/404), the RPC endpoint (a `sign()` call persisting and
+  incrementing a real server-side counter across separate requests, a
+  structured error for an unknown component, 405 on `GET`), then drove a
+  real headless browser through both demos — `Counter`'s button still
+  patches the DOM 3 → 4 exactly as Part 5 proved, and `Guestbook`'s button
+  round-trips to the real server and displays the actual persisted count
+  across repeated clicks.
+- 160 PHPUnit tests passing (20 new this part). PHPStan (level 8) and
   PHP-CS-Fixer both clean.
 - Not yet committed as of this status update.
 
 ## Next up
 
-**User go-ahead needed before starting Part 6** (Bridge abstraction +
-`DefaultBridge`), per the working agreement — Part 5 is done and reported,
-not a mid-part checkpoint this time.
+**User go-ahead needed before starting Part 7**
+(`reactiph/wordpress-bridge` package), per the working agreement.
 
-If/when Part 5 continues instead: attribute-value patching and structural
-(conditional/list) patching are the two explicitly-deferred extensions of
-this same mechanism (see ADR 0017's Consequences) — attribute patching is
-a plausible near-term follow-up; structural patching has no real caller
-until markup control-flow syntax exists at all (see "Open threads" below,
-unchanged since Part 2).
+Part 7 is where the deferred "which methods are server-only" question
+will likely become unavoidable for real (WordPress DB access is the
+concrete case ADR 0018 anticipated) — worth revisiting rather than
+assuming the Part 6 answer (no marking) still holds once that's real.
+Part 7 also needs real auth on the RPC endpoint (see ADR 0018's
+Consequences: today's `RpcHandler` validates input shape but has no
+authentication/authorization at all — fine for a local example, not fine
+for a real site) — likely WordPress nonces, but not yet designed.
 
 ## Remaining parts (unstarted)
 
-6. Bridge abstraction + `DefaultBridge`.
 7. `reactiph/wordpress-bridge` package.
 8. CLI/dev tooling + docs.
 
@@ -110,13 +104,17 @@ unchanged since Part 2).
 - Event bindings only support `click` in practice — the delegation
   mechanism (ADR 0016) is generic, but `hydrate.js` only attaches a click
   listener today. Small, mechanical follow-up, not a design question.
-- `ComponentTranspiler` transpiles every non-excluded method a component
-  declares regardless of whether a template actually references it — no
-  dead-code elimination (ADR 0016). Fine at current scale.
 - DOM patching is scoped to text-node content only — attribute-value and
   structural patching are both explicitly deferred (ADR 0017).
 - Nested-component hydration (a component with its own `hydrationId`
   rendered inside another hydrated component's subtree) has a defensive
   boundary check in `hydrate.js`'s marker walker but no real example or
-  test exercises it yet — worth a dedicated check once Part 6/7 produces
-  a multi-component page.
+  test exercises it yet.
+- **No mechanism marks a component method as server-only vs.
+  client-transpiled** (ADR 0018) — a component needing genuine
+  server-side behavior must have zero client-transpiled methods at all
+  (see `Guestbook` in `examples/bridge-server.php`). Likely to become a
+  real, forced decision in Part 7.
+- **`RpcHandler` has no authentication/authorization** (ADR 0018) —
+  validates payload shape and method-callability only. A real gap for any
+  non-local deployment, explicitly deferred to Part 7.
