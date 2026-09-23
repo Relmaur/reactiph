@@ -32,3 +32,32 @@ jobs:
       - run: composer analyse
 
       - run: composer cs-check
+
+  check-wordpress-bridge:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php-version: ['8.1', '8.4']
+    defaults:
+      run:
+        working-directory: packages/wordpress-bridge
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          coverage: none
+
+      # Resolves reactiph/reactiph via this package's own path repository
+      # (composer.json) pointing at the checked-out core repo -- no
+      # publish/tag step needed for CI to exercise the real dependency.
+      - uses: ramsey/composer-install@v3
+        with:
+          working-directory: packages/wordpress-bridge
+
+      - run: composer test
+
+      - run: composer analyse
+
+      - run: composer cs-check

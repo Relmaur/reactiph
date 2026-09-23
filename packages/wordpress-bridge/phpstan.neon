@@ -1,0 +1,11 @@
+parameters:
+    level: 8
+    paths:
+        - src
+    # tests/bootstrap.php declares this package's hand-rolled WordPress
+    # function/class stubs (no real WP install, no php-stubs/wordpress-stubs
+    # dependency -- see that file's docblock). scanFiles makes their real
+    # signatures visible to analysis of src/ without treating the file
+    # itself as an analysed path.
+    scanFiles:
+        - tests/bootstrap.php

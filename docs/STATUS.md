@@ -7,114 +7,105 @@ history. See `CLAUDE.md` for the full build order and working agreement.
 
 ## Current part
 
-**Part 6 — Bridge abstraction + `DefaultBridge`: complete and verified.**
-`BridgeInterface` (ADR 0004's two named concerns: serving the runtime JS
-asset, exposing an RPC endpoint for server-bound method calls) is now
-implemented, live-verified against a real running PHP built-in server, not
-just unit tests.
+**Part 7 — `reactiph/wordpress-bridge` package: built and unit-tested,
+live verification deliberately deferred.**
 
-One real fork was surfaced to the user before implementation: how a
-component method gets marked "server-bound" vs. "client-transpiled."
-Decided: no new marking mechanism yet — every component method is both,
-using the exact same enumeration (`Component\OwnMethods`, new). A method
-needing genuine server-only behavior must live on a component that's
-never passed to `ComponentTranspiler` at all (see ADR 0018).
+Asked the user upfront how to handle the one piece of this part that
+touches infrastructure outside this repo (a real WordPress site) — chose
+to build and thoroughly test everything first, then check in again when
+ready to verify for real. **That live check has not happened yet.**
+Everything below is proven against hand-rolled WordPress function stubs,
+not a real WP install.
 
-- **`Bridge\BridgeInterface`** — `assetUrl()`, `rpcEndpointUrl()`,
-  `handleRpc()`, deliberately free of any HTTP-framework type (plain
-  arrays in/out for RPC).
-- **`Bridge\RpcHandler`** (new) — the host-agnostic RPC dispatch logic
-  every `BridgeInterface::handleRpc()` is expected to delegate to:
-  validates the payload, resolves the component class (must be a real
-  `BaseComponent` subclass) and method (must be in `OwnMethods::of()`),
-  applies incoming state (rejects any key that isn't an actually-declared
-  property), calls the real method, returns the new state.
-- **`Component\OwnMethods`** (new) — extracted from `ComponentTranspiler`'s
-  previous inline reflection loop; now the single shared definition of
-  "externally invocable method" for both client transpilation and RPC.
-  **Caught a real gap while extracting it**: the old loop had no
-  visibility filter, so a `private`/`protected` helper on a component's
-  own class was already being silently transpiled to client JS since Part
-  5 — now filtered to `ReflectionMethod::IS_PUBLIC` explicitly, which
-  matters much more now that the same set is also RPC-reachable.
-- **`Bridge\DefaultBridge`** — targets PHP's built-in development server.
-  `serveAsset()` (not part of `BridgeInterface` — asset-serving is
-  inherently host-specific) serves `php-runtime.js`/`hydrate.js` from
-  disk; per-component JS stays inlined into the page as it already was in
-  Part 5, not promoted to a third asset type.
-- **`examples/bridge-server.php`** (new) — a real front controller run via
-  `php -S localhost:PORT examples/bridge-server.php`, serving two
-  components: `Counter` (Part 5's demo, unchanged behavior, now loading
-  its runtime JS from actual Bridge-served HTTP responses) and `Guestbook`
-  (new) — a component with no client-transpiled methods at all, whose
-  `sign()` does real file I/O (outside the transpiler's allow-listed
-  subset — ADR 0011) and is wired to the RPC endpoint by hand-written page
-  JS, not new template syntax.
-- **Live-verified against a real running server**: `curl`'d the asset
-  routes (200/404), the RPC endpoint (a `sign()` call persisting and
-  incrementing a real server-side counter across separate requests, a
-  structured error for an unknown component, 405 on `GET`), then drove a
-  real headless browser through both demos — `Counter`'s button still
-  patches the DOM 3 → 4 exactly as Part 5 proved, and `Guestbook`'s button
-  round-trips to the real server and displays the actual persisted count
-  across repeated clicks.
-- 160 PHPUnit tests passing (20 new this part). PHPStan (level 8) and
-  PHP-CS-Fixer both clean.
+- **`packages/wordpress-bridge/`** — a separate Composer package (own
+  `composer.json`, `vendor/`, `phpunit.xml`, `phpstan.neon`), wired to
+  core via a Composer path repository, not a separate git repo.
+- **`WordPressBridge`** implements `BridgeInterface` for WordPress:
+  `assetUrl()` returns a WP REST URL (not a raw `vendor/` filesystem path
+  — real WP hosts commonly block direct `vendor/` web access), served via
+  a `rest_pre_serve_request` filter tagging the response rather than
+  calling `exit()` inside the route callback (a real mistake caught and
+  fixed before it shipped — `exit()` there would have made the method
+  untestable in-process). RPC auth is a standard `wp_rest` nonce, checked
+  in the route's `permission_callback` and delivered to the client via
+  `wp_localize_script()`. `Bridge\RpcHandler` (core, from Part 6) needed
+  zero changes to support this.
+- **`ReactiphShortcode`** (`[reactiph component="..." prop="value"]`) —
+  the Part 7 baseline integration point; a Gutenberg block (also named in
+  ADR 0004) is still unbuilt. Coerces string shortcode attributes against
+  each matching property's declared type (int/float/bool) via reflection
+  before assignment.
+- **Testing**: hand-rolled WP function/class stubs in
+  `tests/bootstrap.php` (no `wp-phpunit`, no Brain Monkey) — also
+  PHPStan's `scanFiles` source, so one file serves both runtime stubbing
+  and static-analysis signatures.
+- **`examples/wordpress-plugin/`** — a real, activatable WP plugin file
+  (`reactiph-demo.php`, its own `composer.json` path-repo'd to both
+  `reactiph/wordpress-bridge` and, transitively, `reactiph/reactiph` —
+  Composer path repositories aren't transitive, so both had to be
+  declared explicitly) registering a `Counter` component via the
+  shortcode. This is the concrete artifact for the deferred live check —
+  ready to drop into a real `wp-content/plugins/` directory.
+- 23 new tests in `packages/wordpress-bridge` (core's own 160 unchanged).
+  PHPStan (level 8) and PHP-CS-Fixer both clean in both packages.
+- CI (`.github/workflows/ci.yml`) now has a second job,
+  `check-wordpress-bridge`, running the same three checks against the new
+  package on PHP 8.1 and 8.4.
 - Not yet committed as of this status update.
 
 ## Next up
 
-**User go-ahead needed before starting Part 7**
-(`reactiph/wordpress-bridge` package), per the working agreement.
+**Live verification against a real WordPress site** — the immediate next
+step, by the user's own choice, before Part 7 can be called fully done.
+Needs: Local by Flywheel's app started (the TAW site,
+`~/Local Sites/taw`, wasn't running when last checked — returned 502),
+then the plugin symlinked/copied into that site's `wp-content/plugins/`,
+activated, and exercised (shortcode renders, click-to-increment still
+patches the DOM as in Part 5/6, and the RPC nonce/route genuinely works
+against real WP REST dispatch, not just the hand-rolled stubs). Nothing
+here touches any TAW git repo — `wp-content/plugins` at that Local site
+isn't itself version-controlled.
 
-Part 7 is where the deferred "which methods are server-only" question
-will likely become unavoidable for real (WordPress DB access is the
-concrete case ADR 0018 anticipated) — worth revisiting rather than
-assuming the Part 6 answer (no marking) still holds once that's real.
-Part 7 also needs real auth on the RPC endpoint (see ADR 0018's
-Consequences: today's `RpcHandler` validates input shape but has no
-authentication/authorization at all — fine for a local example, not fine
-for a real site) — likely WordPress nonces, but not yet designed.
+**After that**, before Part 8:
+- The Gutenberg block ADR 0004 also named is still unbuilt — needs
+  `packages/runtime-js` to actually have build tooling first (an
+  already-tracked open thread since Part 5).
+- The "which methods are server-only vs. client-transpiled" question
+  (ADR 0018) is still open — this part's demo component doesn't touch
+  `$wpdb` or anything else that would force the question for real.
 
 ## Remaining parts (unstarted)
 
-7. `reactiph/wordpress-bridge` package.
 8. CLI/dev tooling + docs.
 
 ## Open threads / not yet decided
 
 - Template syntax has no control-flow directive (`@foreach`/`@if` or
-  similar) for dynamically rendering a variable-length list of children —
-  the plan's Part 2 scope didn't call for it, so the Part 2 Blog example
-  hardcodes a fixed number of `<Thumbnail />` tags rather than looping
-  over an array. Not designed yet. This also gates structural DOM patching
-  (ADR 0017) — there's nothing to patch structurally until this exists.
-- Only one, unnamed default slot exists per component (ADR 0008) — no
-  named/multiple slots.
+  similar) for dynamically rendering a variable-length list of children.
+  Also gates structural DOM patching (ADR 0017).
+- Only one, unnamed default slot exists per component (ADR 0008).
 - Setting `hydrationId` on a component whose template isn't a single
-  HTML-tag root is currently a silent no-op (ADR 0010) — needs a real
-  decision (most likely: enforce single-root globally) once more than one
-  component needs hydrating on a page at once.
+  HTML-tag root is currently a silent no-op (ADR 0010).
 - No allow-list yet for which public properties should actually reach the
   client as hydration state vs. stay server-only (ADR 0010).
-- `packages/runtime-js` has no `package.json`/npm tooling yet — deferred
-  deliberately until real JS build tooling is needed.
-- Closures are entirely unimplemented in the transpiler — blocks
-  `array_map`/`array_filter` (ADR 0015).
-- Event bindings only support `click` in practice — the delegation
-  mechanism (ADR 0016) is generic, but `hydrate.js` only attaches a click
-  listener today. Small, mechanical follow-up, not a design question.
-- DOM patching is scoped to text-node content only — attribute-value and
-  structural patching are both explicitly deferred (ADR 0017).
-- Nested-component hydration (a component with its own `hydrationId`
-  rendered inside another hydrated component's subtree) has a defensive
-  boundary check in `hydrate.js`'s marker walker but no real example or
-  test exercises it yet.
+- `packages/runtime-js` has no `package.json`/npm tooling yet — also now
+  blocks a Gutenberg block (ADR 0019's Consequences).
+- Closures are entirely unimplemented in the transpiler (ADR 0015).
+- Event bindings only support `click` in practice (ADR 0016) — small,
+  mechanical follow-up, not a design question.
+- DOM patching is scoped to text-node content only (ADR 0017).
+- Nested-component hydration has a defensive boundary check in
+  `hydrate.js`'s marker walker but no real example/test exercises it yet.
 - **No mechanism marks a component method as server-only vs.
-  client-transpiled** (ADR 0018) — a component needing genuine
-  server-side behavior must have zero client-transpiled methods at all
-  (see `Guestbook` in `examples/bridge-server.php`). Likely to become a
-  real, forced decision in Part 7.
-- **`RpcHandler` has no authentication/authorization** (ADR 0018) —
-  validates payload shape and method-callability only. A real gap for any
-  non-local deployment, explicitly deferred to Part 7.
+  client-transpiled** (ADR 0018) — still true after Part 7; no demo
+  component built so far has forced the question for real.
+- **`RpcHandler` (core) has no authentication/authorization of its own**
+  (ADR 0018) — `DefaultBridge`'s example still has none. WordPress's
+  `WordPressBridge` now does (a `wp_rest` nonce), so this is resolved for
+  the WordPress path specifically, not for `DefaultBridge`/a plain PHP app.
+- **Live WordPress verification hasn't happened yet** (ADR 0019) — see
+  "Next up". Everything in `packages/wordpress-bridge` is proven against
+  hand-rolled stubs, which can drift from real WP behavior in ways a
+  stub wouldn't catch (nonce lifecycle, REST dispatch edge cases, filter
+  ordering against other plugins).
+- A Gutenberg block (ADR 0004/0019) is still unbuilt.

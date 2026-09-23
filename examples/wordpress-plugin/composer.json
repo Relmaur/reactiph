@@ -1,0 +1,22 @@
+{
+    "name": "reactiph/wordpress-bridge-demo-plugin",
+    "description": "Part 7 smoke-test plugin -- composes reactiph/wordpress-bridge into a real, activatable WordPress plugin.",
+    "type": "wordpress-plugin",
+    "license": "MIT",
+    "require": {
+        "php": "^8.1",
+        "reactiph/wordpress-bridge": "*"
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../../packages/wordpress-bridge"
+        },
+        {
+            "type": "path",
+            "url": "../.."
+        }
+    ],
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}

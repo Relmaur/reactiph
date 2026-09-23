@@ -153,6 +153,25 @@ section is the short version.
   responses; a second demo component, `Guestbook`, round-tripping a
   file-backed counter through RPC with no client transpilation involved
   at all). (ADR 0018)
+- **`packages/wordpress-bridge/`** is `reactiph/wordpress-bridge` — a
+  separate Composer package (own `composer.json`/`vendor`/tests), wired to
+  core via a Composer path repository rather than a separate git repo.
+  `WordPressBridge::assetUrl()` returns a WP REST URL
+  (`reactiph/v1/assets/{name}`), not a raw `vendor/` filesystem path —
+  many real WP hosts block direct `vendor/` web access, so
+  `wp_enqueue_script()` is still used (per ADR 0004) but pointed at that
+  REST URL. The asset route serves raw bytes via a `rest_pre_serve_request`
+  filter (a tagged-response pattern, not `exit()` inside the callback —
+  the first draft did that and was untestable/uncomposable, fixed before
+  shipping). RPC auth is a standard `wp_rest` nonce, delivered to the
+  client via `wp_localize_script()`; `Bridge\RpcHandler` itself (core)
+  needed zero changes. `ReactiphShortcode` (`[reactiph component="..."]`)
+  is the Part 7 baseline integration point — a Gutenberg block is still
+  unbuilt. Tested against hand-rolled WP function stubs
+  (`tests/bootstrap.php`, also PHPStan's `scanFiles` source), not a real
+  WP install — **live verification against a real WordPress site is
+  deliberately deferred**, not done; `examples/wordpress-plugin/` is the
+  ready-to-activate artifact for when that happens. (ADR 0019)
 
 ## Build order
 
@@ -192,6 +211,11 @@ php examples/errors.php    # run the exception-foundation smoke test
 php examples/hydrate.php   # generate examples/hydrate-output.html (Parts 3 & 5) — open it in a browser
 php -S localhost:8080 examples/bridge-server.php   # Part 6 end-to-end Bridge demo — open http://localhost:8080/
 ```
+
+`packages/wordpress-bridge/` and `examples/wordpress-plugin/` are their
+own separate Composer packages (own `composer.json`/`vendor`) — `cd` into
+either and run the same `composer test`/`analyse`/`cs-check`/`check`
+scripts there, not from the repo root.
 
 CI (`.github/workflows/ci.yml`) runs `test`, `analyse`, and `cs-check` on
 push/PR against PHP 8.1 and 8.4, with Node also installed — the
