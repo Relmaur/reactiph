@@ -16,6 +16,8 @@ final class ParityFixture
     public int $b = 0;
     public string $name = '';
     public string $flag = '';
+    public array $items = [];
+    public array $labels = [];
 
     public function sum(): int
     {
@@ -104,5 +106,49 @@ final class ParityFixture
         }
 
         return $steps;
+    }
+
+    public function listLiteral(): array
+    {
+        return [1, 2, 3];
+    }
+
+    public function assocLiteral(): array
+    {
+        return ['x' => 1, 'y' => 2];
+    }
+
+    public function firstItem(): mixed
+    {
+        return $this->items[0];
+    }
+
+    public function setFirstItem(): array
+    {
+        $this->items[0] = 99;
+
+        return $this->items;
+    }
+
+    public function sumItems(): int
+    {
+        $total = 0;
+
+        foreach ($this->items as $item) {
+            $total = $total + $item;
+        }
+
+        return $total;
+    }
+
+    public function joinLabels(): string
+    {
+        $result = '';
+
+        foreach ($this->labels as $key => $value) {
+            $result = $result . $key . ':' . $value . ' ';
+        }
+
+        return $result;
     }
 }

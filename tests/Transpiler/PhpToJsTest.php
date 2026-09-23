@@ -136,18 +136,80 @@ final class PhpToJsTest extends TestCase
         self::assertStringContainsString('for (i = 0; __phpBool((i < 3)); i++) {', $js);
     }
 
-    public function testRejectsArrayLiterals(): void
+    public function testTranspilesAListArrayLiteral(): void
     {
-        $this->expectException(TranspileException::class);
+        $js = (new PhpToJs())->transpileMethod('public function arr(): array { return [1, 2, 3]; }');
 
-        (new PhpToJs())->transpileMethod('public function arr(): array { return [1, 2, 3]; }');
+        self::assertSame("function arr() {\nreturn [1, 2, 3];\n}\n", $js);
     }
 
-    public function testRejectsForeach(): void
+    public function testTranspilesAnAssociativeArrayLiteral(): void
+    {
+        $js = (new PhpToJs())->transpileMethod('public function arr(): array { return ["a" => 1, "b" => 2]; }');
+
+        self::assertSame("function arr() {\nreturn {\"a\": 1, \"b\": 2};\n}\n", $js);
+    }
+
+    public function testTranspilesArrayReadAccess(): void
+    {
+        $js = (new PhpToJs())->transpileMethod('public function first(): mixed { return $this->items[0]; }');
+
+        self::assertSame("function first() {\nreturn this.items[0];\n}\n", $js);
+    }
+
+    public function testTranspilesArrayWriteAccessWithAnExplicitKey(): void
+    {
+        $js = (new PhpToJs())->transpileMethod('public function set(): void { $this->items[0] = "x"; }');
+
+        self::assertSame("function set() {\nthis.items[0] = \"x\";\n}\n", $js);
+    }
+
+    public function testRejectsArrayAppendSyntax(): void
+    {
+        try {
+            (new PhpToJs())->transpileMethod('public function push(): void { $this->items[] = "x"; }');
+            self::fail('Expected a TranspileException.');
+        } catch (TranspileException $e) {
+            self::assertSame('transpiler.array_append_unsupported', $e->code());
+        }
+    }
+
+    public function testRejectsMixedKeyArrayLiterals(): void
+    {
+        try {
+            (new PhpToJs())->transpileMethod('public function arr(): array { return [0 => "a", "x" => "b"]; }');
+            self::fail('Expected a TranspileException.');
+        } catch (TranspileException $e) {
+            self::assertSame('transpiler.unsupported_array_shape', $e->code());
+        }
+    }
+
+    public function testRejectsGappedIntegerKeyArrayLiterals(): void
     {
         $this->expectException(TranspileException::class);
 
-        (new PhpToJs())->transpileMethod('public function loop(): void { foreach ($this->items as $item) {} }');
+        (new PhpToJs())->transpileMethod('public function arr(): array { return [0 => "a", 2 => "b"]; }');
+    }
+
+    public function testTranspilesForeachOverAValueOnly(): void
+    {
+        $js = (new PhpToJs())->transpileMethod(
+            'public function sum(): int { $total = 0; foreach ($this->items as $item) { $total = $total + $item; } return $total; }',
+        );
+
+        self::assertStringContainsString('for (const [__k, __v] of __phpEntries(this.items)) {', $js);
+        self::assertStringContainsString('item = __v;', $js);
+        self::assertStringContainsString('let total, item;', $js);
+    }
+
+    public function testTranspilesForeachWithKeyAndValue(): void
+    {
+        $js = (new PhpToJs())->transpileMethod(
+            'public function keys(): array { $out = []; foreach ($this->items as $k => $v) { $out[$k] = $v; } return $out; }',
+        );
+
+        self::assertStringContainsString('k = __k;', $js);
+        self::assertStringContainsString('v = __v;', $js);
     }
 
     public function testRejectsPlainFunctionCalls(): void
@@ -161,7 +223,7 @@ final class PhpToJsTest extends TestCase
     {
         try {
             (new PhpToJs())->transpileMethod(
-                "public function loop(): void {\n    foreach (\$this->items as \$item) {}\n}",
+                "public function len(): int {\n    return strlen(\$this->name);\n}",
             );
             self::fail('Expected a TranspileException.');
         } catch (TranspileException $e) {

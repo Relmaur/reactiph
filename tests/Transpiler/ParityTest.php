@@ -101,6 +101,15 @@ final class ParityTest extends TestCase
 
         yield 'for loop with a decrementing counter' => ['countDownSteps', ['a' => 4]];
         yield 'for loop: zero iterations' => ['countDownSteps', ['a' => 0]];
+
+        yield 'sequential array literal (JS Array)' => ['listLiteral', []];
+        yield 'string-keyed array literal (JS Object)' => ['assocLiteral', []];
+        yield 'array read access' => ['firstItem', ['items' => [10, 20, 30]]];
+        yield 'array write access with an explicit key' => ['setFirstItem', ['items' => [1, 2, 3]]];
+        yield 'foreach over a sequential array (value only)' => ['sumItems', ['items' => [1, 2, 3, 4]]];
+        yield 'foreach over an empty array' => ['sumItems', ['items' => []]];
+        yield 'foreach with key and value over an associative array' =>
+            ['joinLabels', ['labels' => ['a' => 'Apple', 'b' => 'Banana']]];
     }
 
     /**

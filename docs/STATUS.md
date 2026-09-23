@@ -7,67 +7,64 @@ history. See `CLAUDE.md` for the full build order and working agreement.
 
 ## Current part
 
-**Part 4 — PHP→JS transpiler MVP: slices 1-2 done and verified. Arrays,
-`foreach`, and stdlib builtins are the only pieces of the plan's original
-subset left.**
+**Part 4 — PHP→JS transpiler MVP: slices 1-3 done and verified. Stdlib
+builtins are the only piece of the plan's original subset left.**
 
 Per the plan's "timeboxed spike, confirm scope is holding" instruction,
-asked the user how they wanted the checkpoint to work rather than
-assuming; they chose small-slice-first. After slice 1 landed, they said to
-commit it and keep expanding without another explicit stop-and-ask each
-time — this entry reflects that continued work.
+checked in with the user at two points: once after slice 1 (small core
+subset — they said commit and keep expanding), and again before starting
+arrays specifically, since PHP's array/JS Array-Object duality was flagged
+as a materially different kind of design decision than what came before
+(they confirmed the recommended approach before it was implemented).
 
-- `Transpiler\PhpToJs::transpileMethod()` now supports: reading or
-  writing a property (`$this->prop`) or local variable, `$this->method()`
-  calls with **positional arguments only**, arithmetic (`+ - * / %`),
-  increment/decrement (`++ --`), **strict** comparison (`=== !==`),
-  relational comparison (`< <= > >=`), boolean ops (`&& || !`), string
-  concatenation (`.`), `if`/`elseif`/`else`, `while`, `for` (single
-  expression per clause only), and `return`.
-- Still rejected, with a clear compile-time `TranspileException`: arrays
-  (literals and access), `foreach`, loose `==`/`!=`, named/variadic
-  method-call arguments, multi-expression `for` clauses.
-- PHP/JS semantic gaps handled deliberately (ADR 0011): PHP's
-  `"0"`-string-is-falsy truthiness replicated via a `__phpBool()` runtime
-  shim rather than JS's native truthiness; loose comparison rejected
-  outright rather than approximated.
-- Parity suite (ADR 0006) now covers property writes, method-to-method
-  calls (`NodeRunner` extended to attach multiple transpiled methods onto
-  one JS `this` context — see ADR 0012), `while` loops, and `for` loops,
-  alongside slice 1's cases. 20 parity cases total. A real test-harness
-  ordering bug surfaced along the way (JS-side state snapshotted *after*
-  calling a mutating PHP method instead of before) — fixed; see
-  `docs/gotchas.md`.
-- 82 PHPUnit tests passing (38 in `tests/Transpiler/`). PHPStan (level 8)
+- `Transpiler\PhpToJs::transpileMethod()` now covers everything from the
+  plan's original subset except stdlib builtins: property/local-variable/
+  array-element reads and writes, `$this->method()` calls (positional
+  args only), arithmetic, increment/decrement, strict comparison,
+  relational comparison, boolean ops, string concatenation,
+  `if`/`elseif`/`else`, `while`, `for`, `foreach`, array literals, and
+  `return`.
+- **Array duality resolved** (ADR 0013): a sequential-key array literal
+  compiles to a JS Array; a purely string-keyed one to a JS Object; mixed,
+  gapped, or computed keys are rejected at compile time rather than
+  guessed at. Array access (read/write with an explicit key) compiles
+  uniformly via JS bracket notation for either shape. Array *append*
+  (`$arr[] = ...`) is rejected outright — PHP's append semantics need
+  runtime knowledge of the array's shape that the compiler doesn't have.
+- **`foreach` compiles to a plain inline `for...of` loop**, never a
+  callback — same reasoning as the `let`-hoisting design in slice 1 (ADR
+  0011): a callback would silently break PHP's function-scoping for any
+  variable assigned inside the loop body and read after it. A new runtime
+  helper, `__phpEntries()`, bridges the Array/Object duality for
+  iteration.
+- Parity suite (ADR 0006) grew from 20 to 27 cases, covering both array
+  representations, read/write access, and both `foreach` forms
+  (value-only and key+value). No new correctness bugs surfaced this
+  slice — clean implementation, unlike slice 2's test-harness ordering bug.
+- 96 PHPUnit tests passing (52 in `tests/Transpiler/`). PHPStan (level 8)
   and PHP-CS-Fixer both clean.
-- Committed and pushed to `origin/main` through slice 1
-  (`df9bb96`); slice 2 (property writes/method calls/loops) not yet
+- Committed through slice 2 (`50e653e`); slice 3 (arrays/foreach) not yet
   committed as of this status update.
 
 ## Next up
 
-**Part 4 continued — arrays, `foreach`, and stdlib builtins.** This is
-flagged (ADR 0012) as genuinely more complex than what's landed so far:
-PHP arrays are simultaneously ordered lists and string-keyed maps, with no
-single JS type covering both faithfully. Needs a real design decision —
-likely JS `Array` for sequential-integer-key ("list") arrays and plain
-`Object` for associative ones, rejecting mixed/gapped-key arrays outright
-— plus a runtime `foreach` helper that dispatches between the two at
-runtime, and its own parity tests. Given this is a materially different
-kind of complexity than loops/calls/writes were, worth treating as its
-own checkpoint before broader implementation, consistent with this part's
-"highest risk, timeboxed spike" framing — not assumed to be a quick
-follow-on.
+**Part 4 continued — stdlib builtins** (`Transpiler\Stdlib`, not started):
+~15-20 common PHP functions (candidates: `count`, `strlen`, `implode`,
+`explode`, `in_array`, `array_map`, `array_filter`, `sprintf`,
+`str_replace`, `trim`, `strtolower`, `strtoupper`, `array_key_exists`,
+`is_null`/`isset`-equivalent). Note from ADR 0013: several of these
+(`count`, `array_map`, `array_filter`, ...) need to account for both
+possible JS array representations, the same way `__phpEntries()` already
+does for `foreach` — not a simple 1:1 JS function mapping for every
+builtin. This is the last piece of the plan's original transpiler subset.
 
-After that: the ~15-20 builtin stdlib shims (`Transpiler\Stdlib`, not yet
-started).
-
-Once the transpiler's scope is where the plan wants it: **Part 5 —
-Reactive client runtime**, replacing Part 3's hand-written `Counter` stub
-with real transpiled component output, wrapped in a JS `Proxy` for
-reactivity, with `(click)="method"` template bindings (not yet
-implemented in `Parser` — currently only interpolation/attribute
-expressions exist) and a minimal scoped DOM patch step.
+Once that's done, Part 4 as originally scoped is complete — worth a final
+report back to the user before moving to **Part 5 — Reactive client
+runtime**, which replaces Part 3's hand-written `Counter` stub with real
+transpiled component output, wrapped in a JS `Proxy` for reactivity, with
+`(click)="method"` template bindings (not yet implemented in `Parser` —
+currently only interpolation/attribute expressions exist) and a minimal
+scoped DOM patch step.
 
 ## Remaining parts (unstarted)
 
@@ -97,9 +94,6 @@ expressions exist) and a minimal scoped DOM patch step.
   public except `slot`/`hydrationId` is serialized today.
 - `packages/runtime-js` has no `package.json`/npm tooling yet — deferred
   deliberately until Part 5 needs real JS build tooling.
-- How JS array-vs-object array representation gets decided is the
-  explicit next design question (see "Next up") — not yet a locked-in
-  decision, don't assume a shape for it.
 - `(click)="method"` event-binding template syntax (shown in the plan's
   own example and in `CLAUDE.md`'s opening description) doesn't exist yet
   in `Template\Parser` — needed for Part 5, not designed yet.

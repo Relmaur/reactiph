@@ -61,4 +61,28 @@ final class TranspileException extends \RuntimeException implements ReactiphExce
         );
     }
 
+    public static function unsupportedArrayShape(Node $node): self
+    {
+        $e = new self(
+            'Array literal must be either a plain sequential list ([1, 2, 3]) or a purely string-keyed '
+                . 'associative array (["a" => 1]) — mixed, gapped, or computed keys are not supported.',
+        );
+
+        return $e->withDiagnostics(
+            'transpiler.unsupported_array_shape',
+            ['line' => $node->getStartLine()],
+            'Rewrite as a plain sequential list or a purely string-keyed array.',
+        );
+    }
+
+    public static function arrayAppendNotSupported(Node $node): self
+    {
+        $e = new self('Array append syntax ($arr[] = ...) is not supported for transpilation.');
+
+        return $e->withDiagnostics(
+            'transpiler.array_append_unsupported',
+            ['line' => $node->getStartLine()],
+            'Use an explicit key instead: $arr[$key] = ... .',
+        );
+    }
 }

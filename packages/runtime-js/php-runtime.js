@@ -28,3 +28,24 @@ function __phpBool(value) {
     }
     return true;
 }
+
+/**
+ * `foreach`'s [key, value] pairs, for either JS representation a
+ * transpiled PHP array can have (see docs/adr/0013-*.md): a list-style
+ * PHP array transpiles to a JS Array (keys are numeric indices), an
+ * associative one to a plain Object (keys are its string keys). A
+ * transpiled `foreach` loop is generated as a plain inline
+ * `for (const [k, v] of __phpEntries(arr))`, not a callback, so that any
+ * PHP variable assigned inside the loop body stays function-scoped
+ * (readable after the loop) exactly like it does for `if`/`while`/`for`.
+ */
+function __phpEntries(value) {
+    if (Array.isArray(value)) {
+        return value.map(function (v, i) {
+            return [i, v];
+        });
+    }
+    return Object.keys(value).map(function (k) {
+        return [k, value[k]];
+    });
+}
