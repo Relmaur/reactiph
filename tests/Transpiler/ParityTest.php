@@ -118,6 +118,42 @@ final class ParityTest extends TestCase
         yield 'foreach over an empty array' => ['sumItems', ['items' => []]];
         yield 'foreach with key and value over an associative array' =>
             ['joinLabels', ['labels' => ['a' => 'Apple', 'b' => 'Banana']]];
+
+        yield 'count() on a list array' => ['itemCount', ['items' => [1, 2, 3]]];
+        yield 'count() on an associative array' => ['labelCount', ['labels' => ['a' => 1, 'b' => 2]]];
+
+        // strlen() counts bytes, not characters — "café" is 4 characters
+        // but 5 bytes in UTF-8 (é is 2 bytes). JS's native .length would
+        // give 4 (UTF-16 code units); __phpStrlen (TextEncoder-based)
+        // must match PHP's 5.
+        yield 'strlen() on a multi-byte UTF-8 string' => ['nameLength', ['name' => 'café']];
+        yield 'strlen() on a plain ASCII string' => ['nameLength', ['name' => 'hello']];
+
+        yield 'in_array() with strict:true, found' => ['hasItem', ['a' => 2, 'items' => [1, 2, 3]]];
+        yield 'in_array() with strict:true, not found' => ['hasItem', ['a' => 9, 'items' => [1, 2, 3]]];
+
+        yield 'array_key_exists(): key present' => ['hasLabelKey', ['flag' => 'a', 'labels' => ['a' => 1]]];
+        yield 'array_key_exists(): key absent' => ['hasLabelKey', ['flag' => 'z', 'labels' => ['a' => 1]]];
+
+        yield 'implode() over a list array' => ['implodedItems', ['items' => [1, 2, 3]]];
+        yield 'explode() splits into a list array' => ['explodedName', ['name' => 'a,b,c']];
+
+        // PHP's default trim() charset is a fixed ASCII list; JS's native
+        // .trim() also strips U+00A0 (non-breaking space), which PHP's
+        // default does not. __phpTrim must leave it untouched, matching
+        // PHP, not strip it like native .trim() would.
+        yield 'trim() leaves a non-breaking space untouched (PHP default charset)' =>
+            ['trimmedName', ['name' => "\u{00A0}Hello\u{00A0}"]];
+        yield 'trim() strips ordinary ASCII whitespace' => ['trimmedName', ['name' => "  Hello  \n"]];
+
+        // PHP's strtolower()/strtoupper() (no locale set) are ASCII-only;
+        // JS's native toLowerCase()/toUpperCase() are Unicode-aware and
+        // would also transform "É", which PHP's default leaves untouched.
+        yield 'strtolower() leaves non-ASCII characters untouched' => ['lowerName', ['name' => 'ÀBC']];
+        yield 'strtoupper() leaves non-ASCII characters untouched' => ['upperName', ['name' => 'àbc']];
+
+        yield 'str_replace() with scalar search/replace/subject' =>
+            ['replacedName', ['flag' => 'l', 'name' => 'hello']];
     }
 
     /**

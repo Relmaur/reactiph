@@ -85,4 +85,29 @@ final class TranspileException extends \RuntimeException implements ReactiphExce
             'Use an explicit key instead: $arr[$key] = ... .',
         );
     }
+
+    public static function unsupportedStdlibFunction(Node $node, string $functionName): self
+    {
+        $e = new self(sprintf('%s() is not part of Reactiph\'s transpiled stdlib subset.', $functionName));
+
+        return $e->withDiagnostics(
+            'transpiler.unsupported_stdlib_function',
+            ['function' => $functionName, 'line' => $node->getStartLine()],
+            'See docs/adr/0015-*.md for the supported stdlib subset and why some common '
+                . 'functions (array_map, array_filter, sprintf) aren\'t in it yet.',
+        );
+    }
+
+    public static function looseInArrayNotSupported(Node $node): self
+    {
+        $e = new self(
+            'in_array() without strict:true uses PHP loose comparison, which is not supported for transpilation.',
+        );
+
+        return $e->withDiagnostics(
+            'transpiler.loose_in_array_unsupported',
+            ['line' => $node->getStartLine()],
+            'Pass true as the third argument: in_array($needle, $haystack, true).',
+        );
+    }
 }

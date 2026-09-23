@@ -215,18 +215,59 @@ final class PhpToJsTest extends TestCase
         self::assertStringContainsString('v = __v;', $js);
     }
 
-    public function testRejectsPlainFunctionCalls(): void
+    public function testTranspilesAllowlistedStdlibFunctions(): void
+    {
+        $js = (new PhpToJs())->transpileMethod('public function len(): int { return strlen($this->name); }');
+
+        self::assertSame("function len() {\nreturn __phpStrlen(this.name);\n}\n", $js);
+    }
+
+    public function testRejectsFunctionsNotOnTheStdlibAllowlist(): void
+    {
+        try {
+            (new PhpToJs())->transpileMethod('public function m(): array { return array_map($f, $this->items); }');
+            self::fail('Expected a TranspileException.');
+        } catch (TranspileException $e) {
+            self::assertSame('transpiler.unsupported_stdlib_function', $e->code());
+            self::assertSame('array_map', $e->context()['function']);
+        }
+    }
+
+    public function testRejectsInArrayWithoutExplicitStrictTrue(): void
+    {
+        try {
+            (new PhpToJs())->transpileMethod(
+                'public function has(): bool { return in_array($this->a, $this->items); }',
+            );
+            self::fail('Expected a TranspileException.');
+        } catch (TranspileException $e) {
+            self::assertSame('transpiler.loose_in_array_unsupported', $e->code());
+        }
+    }
+
+    public function testRejectsInArrayWithStrictFalse(): void
     {
         $this->expectException(TranspileException::class);
 
-        (new PhpToJs())->transpileMethod('public function len(): int { return strlen($this->name); }');
+        (new PhpToJs())->transpileMethod(
+            'public function has(): bool { return in_array($this->a, $this->items, false); }',
+        );
+    }
+
+    public function testTranspilesInArrayWithExplicitStrictTrue(): void
+    {
+        $js = (new PhpToJs())->transpileMethod(
+            'public function has(): bool { return in_array($this->a, $this->items, true); }',
+        );
+
+        self::assertStringContainsString('__phpInArray(this.a, this.items)', $js);
     }
 
     public function testUnsupportedConstructExceptionCarriesLineNumber(): void
     {
         try {
             (new PhpToJs())->transpileMethod(
-                "public function len(): int {\n    return strlen(\$this->name);\n}",
+                "public function pick(): string {\n    switch (\$this->a) { default: return 'x'; }\n}",
             );
             self::fail('Expected a TranspileException.');
         } catch (TranspileException $e) {

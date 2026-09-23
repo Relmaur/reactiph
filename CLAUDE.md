@@ -79,22 +79,31 @@ section is the short version.
   DOM. Only works when the template's root is a single literal HTML tag;
   silently inert otherwise (a known limitation, not yet an error). (ADR
   0010)
-- **The transpiler is being built in scope-checkpointed slices, not all at
-  once**: reads/writes of properties, local variables, and array elements;
-  method calls (positional args only); arithmetic, increment/decrement,
-  strict comparison, boolean ops, string concat; `if`/`elseif`/`else`,
-  `while`, `for`, `foreach`; and array literals. Stdlib builtins
-  (`count()`, `array_map()`, etc.) are the one remaining, deliberately
-  deferred piece (see `docs/STATUS.md`). PHP and JS truthiness/equality
-  diverge in real, not theoretical ways (e.g. the string `"0"` is falsy in
-  PHP, truthy in JS); transpiled code never relies on JS's native
-  truthiness for `if`/`&&`/`||`/`!`, routing through a `__phpBool()`
-  runtime shim instead, and loose comparison (`==`/`!=`) is rejected
-  outright rather than approximated. A PHP array literal compiles to a JS
-  Array (sequential-key) or a JS Object (purely string-keyed) — mixed or
-  gapped keys are rejected, not guessed at; `foreach` compiles to a plain
-  inline loop (never a callback) so PHP's function-scoping is preserved.
-  (ADR 0011, ADR 0012, ADR 0013)
+- **The transpiler now covers everything from the plan's original subset**
+  (ADR 0011 → 0015): reads/writes of properties, local variables, and
+  array elements; method calls (positional args only); ten allow-listed
+  stdlib builtins; arithmetic, increment/decrement, strict comparison,
+  boolean ops, string concat; `if`/`elseif`/`else`, `while`, `for`,
+  `foreach`; and array literals. PHP and JS diverge, in real rather than
+  theoretical ways, on more of this than seems obvious at first — e.g. the
+  string `"0"` is falsy in PHP but truthy in JS; PHP casts `true`/`false`
+  to `"1"`/`""` when stringified, not `"true"`/`"false"`; `strlen()`
+  counts bytes, not JS's UTF-16 code units; `strtolower()`/`trim()` use a
+  fixed ASCII rule set, not JS's Unicode-aware ones. Transpiled code never
+  relies on the "obvious" native JS behavior for any of these — each has
+  its own runtime shim in `packages/runtime-js/php-runtime.js`
+  (`__phpBool`, `__phpString`, `__phpStrlen`, `__phpTrim`, ...), and each
+  shim's necessity was verified empirically (`php -r` vs `node -e`) before
+  trusting it, not assumed. Loose comparison (`==`/`!=`, including
+  `in_array()` without `strict: true`) is rejected outright rather than
+  approximated. A PHP array literal compiles to a JS Array
+  (sequential-key) or a JS Object (purely string-keyed) — mixed or gapped
+  keys are rejected, not guessed at; `foreach` compiles to a plain inline
+  loop (never a callback) so PHP's function-scoping is preserved. One of
+  these shims (`__phpString`) exists because a real bug shipped in slice 1
+  and stayed shipped for two more slices before being caught — see ADR
+  0014 and the "types actually exercised" entry in `docs/gotchas.md`.
+  (ADR 0011-0015)
 
 ## Build order
 

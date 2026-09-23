@@ -168,3 +168,20 @@ test happened to pass through it — when adding a new construct (or
 revisiting an old one), check it against every type in the fixture's
 property set that could plausibly reach it, not just whichever one the
 first test case reached for.
+
+### PHPStan narrows a `match` through a preceding `isset()` check on the same key set
+
+`compileFuncCall()`'s `match ($name) { 'count' => ..., ..., 'str_replace'
+=> ... }` had a `default => throw ...` arm as a safety net. PHPStan flagged
+the *last* real arm ('str_replace') as "comparison... is always true" and
+the `default` as unreachable — not a bug, but a real, useful observation:
+an earlier `if (!isset(self::STDLIB_ARITY[$name])) { throw ...; }` already
+proves, by the time the `match` runs, that `$name` is one of
+`STDLIB_ARITY`'s exact keys, and the `match` lists all of those keys — so
+`default` genuinely can never execute. Removed it, with a comment
+explaining PHP's own `UnhandledMatchError` is the fallback if the arity
+table and the match arms ever drift out of sync. Lesson: PHPStan tracks
+type narrowing across an `isset()` on a `const array` and will flag a
+`match`'s `default` as dead code once earlier control flow has already
+proven exhaustiveness — worth checking for this pattern specifically
+before assuming a "just in case" default arm is free insurance.

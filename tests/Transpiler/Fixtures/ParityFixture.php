@@ -157,4 +157,59 @@ final class ParityFixture
 
         return $result;
     }
+
+    public function itemCount(): int
+    {
+        return count($this->items);
+    }
+
+    public function labelCount(): int
+    {
+        return count($this->labels);
+    }
+
+    public function nameLength(): int
+    {
+        return strlen($this->name);
+    }
+
+    public function hasItem(): bool
+    {
+        return in_array($this->a, $this->items, true);
+    }
+
+    public function hasLabelKey(): bool
+    {
+        return array_key_exists($this->flag, $this->labels);
+    }
+
+    public function implodedItems(): string
+    {
+        return implode(', ', $this->items);
+    }
+
+    public function explodedName(): array
+    {
+        return explode(',', $this->name);
+    }
+
+    public function trimmedName(): string
+    {
+        return trim($this->name);
+    }
+
+    public function lowerName(): string
+    {
+        return strtolower($this->name);
+    }
+
+    public function upperName(): string
+    {
+        return strtoupper($this->name);
+    }
+
+    public function replacedName(): string
+    {
+        return str_replace($this->flag, 'X', $this->name);
+    }
 }

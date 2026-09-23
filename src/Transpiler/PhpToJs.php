@@ -17,17 +17,20 @@ use PhpParser\ParserFactory;
  *
  * Supports an explicit, documented subset of PHP (ADR 0003): reading or
  * writing a property (`$this->prop`) or local variable, method calls with
- * positional arguments (`$this->method(...)`), arithmetic (`+ - * / %`),
+ * positional arguments (`$this->method(...)`), a small allow-listed set of
+ * stdlib builtins (`self::STDLIB_ARITY`), arithmetic (`+ - * / %`),
  * increment/decrement (`++ --`), strict comparison (`=== !==`), relational
  * comparison (`< <= > >=`), boolean operators (`&& || !`), string
  * concatenation (`.`), `if`/`elseif`/`else`, `while`, `for`, `foreach`,
  * array literals/access, and `return`. Anything else — loose comparison,
  * named/variadic arguments, array append syntax (`$arr[] = ...`), mixed
- * or gapped array keys — throws {@see TranspileException} rather than
- * producing wrong JS. See ADR 0011/0012/0013 for why this particular
- * subset, and for the PHP/JS semantic gaps (truthiness, loose equality,
- * array duality) it works around rather than ignores; see
- * `docs/STATUS.md` for what's still deferred (currently: stdlib builtins).
+ * or gapped array keys, non-allow-listed function calls — throws
+ * {@see TranspileException} rather than producing wrong JS. See ADR
+ * 0011/0012/0013/0015 for why this particular subset, and for the PHP/JS
+ * semantic gaps (truthiness, loose equality, array duality, byte-vs-code-unit
+ * string length, ASCII-vs-Unicode case conversion) it works around rather
+ * than ignores. As of ADR 0015, this covers everything from the plan's
+ * original transpiler subset.
  *
  * PHP variables are function-scoped, not block-scoped, so every local
  * variable the method assigns anywhere — including a `for`/`foreach`
@@ -253,6 +256,7 @@ final class PhpToJs
             $expr instanceof Expr\Array_ => $this->compileArrayLiteral($expr),
             $expr instanceof Expr\Assign => $this->compileAssign($expr),
             $expr instanceof Expr\MethodCall => $this->compileMethodCall($expr),
+            $expr instanceof Expr\FuncCall => $this->compileFuncCall($expr),
             $expr instanceof Expr\PreInc => '++' . $this->compileExpr($expr->var),
             $expr instanceof Expr\PostInc => $this->compileExpr($expr->var) . '++',
             $expr instanceof Expr\PreDec => '--' . $this->compileExpr($expr->var),
@@ -388,18 +392,111 @@ final class PhpToJs
             throw TranspileException::unsupportedConstruct($expr);
         }
 
-        $args = array_map(
-            function (Node $arg) use ($expr): string {
+        $args = $this->compilePositionalArgs($expr, $expr->args);
+
+        return $this->compileExpr($expr->var) . '.' . $expr->name->toString() . '(' . implode(', ', $args) . ')';
+    }
+
+    /**
+     * @param array<Node\Arg|Node\ArgPlaceholder|Node\VariadicPlaceholder> $args
+     * @return string[]
+     */
+    private function compilePositionalArgs(Node $errorContext, array $args): array
+    {
+        return array_map(
+            function (Node $arg) use ($errorContext): string {
                 if (!$arg instanceof Node\Arg || $arg->name !== null || $arg->unpack) {
-                    throw TranspileException::unsupportedConstruct($expr);
+                    throw TranspileException::unsupportedConstruct($errorContext);
                 }
 
                 return $this->compileExpr($arg->value);
             },
-            $expr->args,
+            $args,
         );
+    }
 
-        return $this->compileExpr($expr->var) . '.' . $expr->name->toString() . '(' . implode(', ', $args) . ')';
+    /**
+     * A deliberately small, explicit allow-list of PHP builtin functions
+     * — each checked against a real PHP/JS behavioral gap before being
+     * added, not a blanket 1:1 mapping. See ADR 0015 for why several
+     * common functions (array_map, array_filter, sprintf) aren't here.
+     */
+    private const STDLIB_ARITY = [
+        'count' => 1,
+        'strlen' => 1,
+        'array_key_exists' => 2,
+        'implode' => 2,
+        'explode' => 2,
+        'trim' => 1,
+        'strtolower' => 1,
+        'strtoupper' => 1,
+        'str_replace' => 3,
+    ];
+
+    private function compileFuncCall(Expr\FuncCall $expr): string
+    {
+        if (!$expr->name instanceof Node\Name) {
+            throw TranspileException::unsupportedConstruct($expr);
+        }
+
+        $name = strtolower($expr->name->toString());
+        $args = $this->compilePositionalArgs($expr, $expr->args);
+
+        if ($name === 'in_array') {
+            return $this->compileInArray($expr, $args);
+        }
+
+        if (!isset(self::STDLIB_ARITY[$name])) {
+            throw TranspileException::unsupportedStdlibFunction($expr, $name);
+        }
+
+        if (count($args) !== self::STDLIB_ARITY[$name]) {
+            throw TranspileException::unsupportedConstruct($expr);
+        }
+
+        // No `default` arm: $name is provably one of STDLIB_ARITY's keys
+        // by this point (the isset() check above), so every case is
+        // already covered — PHPStan flags an unreachable default here.
+        // If STDLIB_ARITY and this match ever drift out of sync, PHP's
+        // own UnhandledMatchError is the safety net.
+        return match ($name) {
+            'count' => "__phpCount({$args[0]})",
+            'strlen' => "__phpStrlen({$args[0]})",
+            'array_key_exists' => "Object.prototype.hasOwnProperty.call({$args[1]}, {$args[0]})",
+            'implode' => "__phpImplode({$args[0]}, {$args[1]})",
+            'explode' => "__phpExplode({$args[0]}, {$args[1]})",
+            'trim' => "__phpTrim({$args[0]})",
+            'strtolower' => "__phpStrtolower({$args[0]})",
+            'strtoupper' => "__phpStrtoupper({$args[0]})",
+            'str_replace' => "__phpStrReplace({$args[0]}, {$args[1]}, {$args[2]})",
+        };
+    }
+
+    /**
+     * @param string[] $args
+     */
+    private function compileInArray(Expr\FuncCall $expr, array $args): string
+    {
+        if (count($args) === 2) {
+            // PHP's default $strict = false — always loose comparison,
+            // which PhpToJs never transpiles (ADR 0011).
+            throw TranspileException::looseInArrayNotSupported($expr);
+        }
+
+        if (count($args) !== 3) {
+            throw TranspileException::unsupportedConstruct($expr);
+        }
+
+        $strictArg = $expr->args[2];
+        $isLiteralTrue = $strictArg instanceof Node\Arg
+            && $strictArg->value instanceof Expr\ConstFetch
+            && strtolower($strictArg->value->name->toString()) === 'true';
+
+        if (!$isLiteralTrue) {
+            throw TranspileException::looseInArrayNotSupported($expr);
+        }
+
+        return "__phpInArray({$args[0]}, {$args[1]})";
     }
 
     private function compileAssign(Expr\Assign $expr): string
