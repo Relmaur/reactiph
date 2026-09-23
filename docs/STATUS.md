@@ -27,11 +27,17 @@ for `watch`: the mtime baseline was captured *after* the initial build
 ran instead of before, which could silently absorb a change into the
 baseline it's supposed to be compared against — see `docs/gotchas.md`.
 Docs half of Part 8 already covered separately by the `reactiph-docs`
-site; not yet pinged about this CLI specifically.
+site; `reactiph-docs-46` pinged about this CLI specifically, not yet
+confirmed back.
 
 **All 8 original build-order parts are now done.** What's left is the one
 still-open verification thread below, plus the "Open threads" list, which
 are refinements/extensions rather than unbuilt parts.
+
+**A `Guestbook` RPC-round-trip demo for WordPress/TAW is now built**
+(`examples/wordpress-plugin/reactiph-demo.php`), picking up the "Next up"
+item below — see that section for what it proves and what's still
+pending (a live check, handed off to `taw-85`).
 
 ## `reactiph/taw-bridge` (ADR 0021)
 
@@ -148,15 +154,36 @@ mechanics themselves; only the one wiring gap already flagged below.
 
 ## Next up
 
-One thread is live and unstarted, with no user go-ahead yet to pick it
-up:
+**A live RPC round-trip against a real WordPress/TAW site** — narrower
+than the original Part 7 ask now that the SSR/hydration/asset-serving
+mechanics are proven live (above). Built, not yet live-verified:
 
-1. **A live RPC round-trip against a real WordPress/TAW site** — narrower
-   than the original Part 7 ask now that the SSR/hydration/asset-serving
-   mechanics are proven live (above); what's left specifically is a
-   component whose method needs real server state (like Part 6's
-   `Guestbook`) exercised through a real `wp_rest`-nonce-gated REST call,
-   not just a client-transpiled one like `Counter`.
+- `examples/wordpress-plugin/reactiph-demo.php` gained a `Guestbook`
+  component and a `[reactiph_guestbook]` shortcode, mirroring
+  `examples/bridge-server.php`'s own `Guestbook` exactly (Part 6):
+  `sign()` reads/writes a WordPress option (`get_option`/`update_option`,
+  the idiomatic WP persistence mechanism — Part 6's version used raw file
+  I/O against `DefaultBridge` for the same underlying reason), work
+  outside the transpiler's allow-listed subset. Rendered SSR-only, never
+  passed to `ComponentTranspiler` (`ReactiphShortcode` always transpiles
+  whatever it renders, so this needed its own small shortcode function
+  rather than reusing `ReactiphShortcode`); its button is wired by hand
+  in inline JS that `fetch()`s `WordPressBridge`'s RPC endpoint directly
+  with an `X-WP-Nonce` header (`RpcHandler`'s dispatch itself needed zero
+  changes).
+- Sanity-checked in-process (`RpcHandler::handle()` against the real
+  `Guestbook::sign()`, with `get_option`/`update_option` stubbed):
+  successive calls correctly return `signatureCount` 1, then 2 — real
+  dispatch, real state accumulation, not just "it doesn't throw."
+- **Not yet live-verified against a real site.** Handed off to `taw-85`
+  (same peer session that verified ADR 0021), since they already have a
+  running WordPress + TAW site with `WordPressBridge::registerRoutes()`
+  wired and `reactiph/wordpress-bridge` on the theme's own Composer
+  autoloader — the `Guestbook` class + shortcode function can be pasted
+  directly into the theme's `inc/customizations.php` (reusing what's
+  already there) instead of requiring a whole separate plugin activation,
+  though `examples/wordpress-plugin/` remains available as a standalone
+  plugin too if that's preferred.
 
 ## Remaining parts (unstarted)
 
