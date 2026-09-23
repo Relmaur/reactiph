@@ -187,6 +187,30 @@ section is the short version.
   out of scope — no asset pipeline exists yet to serve them. Deliberately
   called "components," never "blocks," to avoid colliding with the
   actual planned WordPress Gutenberg *block* integration. (ADR 0020)
+- **`packages/taw-bridge/`** is `reactiph/taw-bridge` — a TAW-specific
+  integration, not another generic-WordPress one, requested to replace
+  the shortcode as the real embedding mechanism for the user's own TAW
+  projects. Its one class, `ReactiveMetaBlock`, extends TAW's real
+  `TAW\Core\Block\MetaBlock` — since TAW's own `BlockLoader` auto-discovers
+  purely via `is_subclass_of($class, MetaBlock::class)`, this needs **zero
+  changes to `taw-core`** to work. No new `BridgeInterface` implementation
+  exists for TAW specifically — a TAW site is a real WordPress site, so
+  `WordPressBridge`'s asset/RPC mechanics (ADR 0019) apply unchanged;
+  `ReactiveMetaBlock` just composes a `WordPressBridge` internally for
+  `enqueueRuntimeAssets()`. A `MetaBlock` instance is long-lived
+  (one per variation, `render($postId)` called repeatedly for different
+  posts) which doesn't match Reactiph's own instance-property state model —
+  `render()` resolves this by constructing a **fresh** Reactiph component
+  instance on every call, mapping `getData($postId)`'s array onto its
+  public properties. Tested against the **real** `taw/core` classes (a
+  path-repo dev dependency on `~/Documents/TAW/taw-core`), not a
+  hand-stubbed lookalike — only bare WordPress functions are stubbed, the
+  same smaller surface `wordpress-bridge` already stubs. A real, non-obvious
+  pitfall was hit and documented: every `taw/core` file guards with
+  `if (!defined('ABSPATH')) { exit; }`, and merely autoloading one without
+  `ABSPATH` defined first presented as an indefinite hang, not a clean
+  failure (`docs/gotchas.md`). Live verification against a real TAW site
+  is deferred, alongside Part 7's still-pending WordPress check. (ADR 0021)
 
 ## Build order
 

@@ -1,0 +1,13 @@
+parameters:
+    level: 8
+    paths:
+        - src
+    # tests/bootstrap.php declares this package's hand-rolled WordPress
+    # function stubs (no real WP install) -- scanFiles makes their real
+    # signatures visible to analysis of src/ without treating the file
+    # itself as an analysed path. taw/core's own classes (MetaBlock,
+    # BaseBlock) resolve normally through the real path-repo'd package --
+    # no separate stubbing needed for those, since their own method
+    # signatures don't reference WordPress function return types directly.
+    scanFiles:
+        - tests/bootstrap.php

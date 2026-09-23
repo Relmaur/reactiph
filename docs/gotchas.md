@@ -209,3 +209,34 @@ every bare non-`$this` variable as a `this.` property access, provably
 safe only because the transpiler's allow-listed subset (ADR 0011) has no
 closures/arrow functions, so a template expression can never actually
 contain a real local variable under that subset.
+
+## `reactiph/taw-bridge`
+
+### Merely autoloading a `taw/core` class hangs the process if `ABSPATH` isn't defined first — it doesn't fail loudly
+
+Building `packages/taw-bridge`'s test suite, `php vendor/bin/phpunit` (and
+even a bare `php -r "class_exists(\TAW\Core\Block\MetaBlock::class);"`)
+hung indefinitely — no output, no error, no PHPUnit progress dots, just
+silence past any reasonable timeout. Every `taw/core` source file starts
+with WordPress's standard "block direct file access" guard,
+`if (!defined('ABSPATH')) { exit; }` — with `ABSPATH` undefined (no real
+WordPress bootstrap in a plain PHPUnit process), that line runs the
+instant the class is autoloaded, before any of this package's own code
+gets a chance to execute. The genuinely surprising part: this did **not**
+show up as a clean, fast `exit` — from the outside it looked exactly like
+an infinite hang (confirmed by first proving the *same* `class_exists()`
+call completes instantly once `ABSPATH` is defined first: identical code,
+only the timing changed). The exact mechanism for why an autoloaded
+`exit()` presented as a hang rather than an immediate clean termination
+wasn't tracked down further — not worth the time once the empirical fix
+was confirmed to work reliably, and re-verify before trusting a similar
+assumption elsewhere rather than assuming this generalizes.
+
+**Fix**: define `ABSPATH` (to any placeholder path) at the very top of
+`tests/bootstrap.php`, before `vendor/autoload.php` is even required —
+`reactiph/wordpress-bridge`'s own bootstrap never needed this, since none
+of *its* hand-rolled stubs are the files being guarded; here, the guarded
+files are real, unmodified `taw/core` source being autoloaded directly.
+Worth checking for this exact guard pattern (`if (!defined('ABSPATH'))`)
+in any other real WordPress-ecosystem package pulled in via a path
+repository for testing, not just `taw/core` specifically.

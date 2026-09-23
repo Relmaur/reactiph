@@ -1,0 +1,54 @@
+{
+    "name": "reactiph/taw-bridge",
+    "description": "Reactiph integration for the TAW theme framework: a ReactiveMetaBlock block type, and a BridgeInterface implementation reusing WordPressBridge underneath (a TAW site is a real WordPress site).",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.2",
+        "reactiph/reactiph": "*",
+        "reactiph/wordpress-bridge": "*",
+        "taw/core": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.5",
+        "phpstan/phpstan": "^2.2",
+        "friendsofphp/php-cs-fixer": "^3.95"
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../.."
+        },
+        {
+            "type": "path",
+            "url": "../wordpress-bridge"
+        },
+        {
+            "type": "path",
+            "url": "../../../TAW/taw-core"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Reactiph\\TawBridge\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Reactiph\\TawBridge\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "analyse": "phpstan analyse",
+        "cs-check": "php-cs-fixer fix --dry-run --diff",
+        "cs-fix": "php-cs-fixer fix",
+        "check": [
+            "@test",
+            "@analyse",
+            "@cs-check"
+        ]
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
