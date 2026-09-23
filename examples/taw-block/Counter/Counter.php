@@ -12,12 +12,21 @@ declare(strict_types=1);
  *
  * The class name and namespace follow TAW\Blocks\BlockLoader's own
  * derivation rule exactly: Blocks/Counter/Counter.php -> TAW\Blocks\Counter\Counter.
+ *
+ * CounterComponent.php is require_once'd directly rather than relied on
+ * to autoload via its own ReactiphTawDemo namespace -- this folder is
+ * meant to be copied or symlinked as a whole into an arbitrary theme's
+ * Blocks/ directory, which has no reason to already have a PSR-4 mapping
+ * for that namespace. require_once keeps the folder self-contained
+ * regardless of the target theme's own autoload configuration.
  */
 
 namespace TAW\Blocks\Counter;
 
 use Reactiph\TawBridge\ReactiveMetaBlock;
 use ReactiphTawDemo\CounterComponent;
+
+require_once __DIR__ . '/CounterComponent.php';
 
 final class Counter extends ReactiveMetaBlock
 {
