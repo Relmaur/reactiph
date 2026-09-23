@@ -339,3 +339,56 @@ not a verified one — if this pattern (an action appearing to apply twice
 from one real user interaction) ever recurs, check for a second
 automation session hitting the same target before assuming it's a real
 double-submission or idempotency bug in `RpcHandler`/`Guestbook`.
+
+## `.github/workflows/monorepo-split.yml` (ADR 0023)
+
+### A brand-new, genuinely empty GitHub repo breaks the split action's "create branch if missing" step
+
+First live run against `reactiph-wordpress-bridge`/`reactiph-taw-bridge`
+(both created via `gh repo create`, no initial commit) failed with
+`error: src refspec main does not match any` and
+`error: failed to push some refs`. The action's own logic, on finding no
+`main` branch to check out, runs `git checkout -b main` (succeeds
+locally — an "unborn" branch with no commits yet) then immediately
+`git push origin main` — which fails, because there is no commit for
+that ref to point at yet. `git checkout -b` alone is not enough to make a
+branch pushable; a repo needs at least one commit before any branch
+(including a freshly created one) can be pushed. Every other write this
+action does happens *after* it has already established a real branch via
+this same path, so this only bites a genuinely-fresh, zero-commit target
+repo, not a pre-existing one.
+
+**Fix**: seed each target repo with one manual commit on `main`
+(`git commit --allow-empty` + push) before ever running the split action
+against it. A repo created with an initial README (`gh repo create
+--add-readme`, or GitHub's own "Initialize with a README" checkbox in the
+web UI) would have avoided this entirely — worth doing that instead, next
+time a new split target repo is created.
+
+### A fine-grained PAT with repos selected but zero permissions added clones fine and fails silently-until-push
+
+`git clone` succeeded, `git checkout`, the file copy, and the local
+`git commit` all succeeded — the *push* was the only step that failed,
+with a real `403` (`Permission ... denied`). The token had both target
+repos correctly selected under "Repository access," but the
+"Permissions" section had never had anything added to it (GitHub's
+fine-grained-PAT UI treats repo selection and per-capability permissions
+as two separate steps — selecting repos alone doesn't grant any actual
+permission on them). A token in this state authenticates fine and can do
+anything read-only-and-public (which is why clone worked), and fails only
+at the point something requiring write access happens — which, in this
+action's flow, is the very last step, after everything else already
+looked like it was going to succeed. Fixed by adding `Contents: Read and
+write` under the token's Repository permissions.
+
+**Related UI quirk observed, not fully explained**: re-opening the same
+fine-grained token afterward to edit it showed "Public repositories"
+selected under Repository access instead of the token's actual saved
+"Only select repositories" + the two real repos — a rendering issue in
+GitHub's own edit form, not a change to the token's real, already-saved
+scope (confirmed via the API: the two repos were still genuinely
+selected). Worth explicitly re-verifying and re-selecting "Only select
+repositories" before clicking Update on any subsequent edit, rather than
+trusting what the form shows on open — accidentally saving over it with
+"Public repositories" selected would silently downgrade the token to
+read-only.
