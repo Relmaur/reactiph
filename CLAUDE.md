@@ -79,6 +79,16 @@ section is the short version.
   DOM. Only works when the template's root is a single literal HTML tag;
   silently inert otherwise (a known limitation, not yet an error). (ADR
   0010)
+- **The transpiler is being built in scope-checkpointed slices, not all at
+  once**: slice 1 covers property/variable reads, arithmetic, strict
+  comparison, boolean ops, string concat, and `if`/`elseif`/`else` —
+  loops, arrays, method calls, and property writes are explicitly
+  deferred. PHP and JS truthiness/equality diverge in real, not
+  theoretical ways (e.g. the string `"0"` is falsy in PHP, truthy in JS);
+  transpiled code never relies on JS's native truthiness for `if`/`&&`/
+  `||`/`!`, routing through a `__phpBool()` runtime shim instead, and
+  loose comparison (`==`/`!=`) is rejected outright rather than
+  approximated. (ADR 0011)
 
 ## Build order
 
@@ -119,9 +129,11 @@ php examples/hydrate.php   # generate examples/hydrate-output.html (Part 3) — 
 ```
 
 CI (`.github/workflows/ci.yml`) runs `test`, `analyse`, and `cs-check` on
-push/PR against PHP 8.1 and 8.4. A part isn't done until `composer check`
-passes clean, in addition to any live check the part requires (see Build
-order above).
+push/PR against PHP 8.1 and 8.4, with Node also installed — the
+Transpiler parity suite (ADR 0006) shells out to a real `node` binary, so
+Node is a required test dependency from Part 4 onward, not just a local
+convenience. A part isn't done until `composer check` passes clean, in
+addition to any live check the part requires (see Build order above).
 
 Before recommending or reusing something from an ADR or `docs/gotchas.md`,
 verify it still matches current code — both are point-in-time records, not

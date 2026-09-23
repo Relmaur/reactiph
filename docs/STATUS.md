@@ -7,53 +7,67 @@ history. See `CLAUDE.md` for the full build order and working agreement.
 
 ## Current part
 
-**Part 3 — Hydration payload + client bootstrap (transpiler-free): done, verified.**
+**Part 4 — PHP→JS transpiler MVP: slice 1 done and verified; paused at
+the agreed checkpoint, awaiting go-ahead to expand scope.**
 
-- `BaseComponent::$hydrationId` (nullable, default null): when set,
-  `Compiler` emits `data-reactiph-id="..."` on the template's root element
-  — only when that root is a single literal HTML tag (see "Open threads"
-  below for the current limitation). Fully additive to Part 1/2 behavior;
-  all 35 pre-existing tests kept passing unmodified throughout.
-- `Runtime\HydrationPayload` / `Runtime\HydrationSerializer`: build a
-  payload (id, component class, public state minus `slot`/`hydrationId`)
-  from a rendered component and serialize a list of them into a
-  `#reactiph-hydration` JSON `<script>` tag, safely escaped against
-  `</script>`-breakout via `JSON_HEX_*` flags. See ADR 0010.
-- `packages/runtime-js/hydrate-stub.js`: a hand-written, Counter-specific
-  hydration script — deliberately throwaway scaffolding per ADR 0005, to
-  be replaced entirely by Part 5's generic reactive runtime.
-- **Live-verified in a real (headless, isolated) browser**, per the
-  per-part verification rule: `examples/hydrate.php` generates a static
-  page; loaded it, confirmed SSR shows count 3 with the root correctly
-  marked `data-reactiph-id="counter-1"`, clicked Increment twice, and
-  confirmed the DOM updated to 5 while the embedded manifest's raw JSON
-  still read 3 — proving direct DOM mutation, not a re-render — with zero
-  console errors. Used an isolated `puppeteer-core` script rather than the
-  `chrome-devtools-mcp` tool directly, because another active session had
-  the shared browser profile locked; see `docs/gotchas.md`.
-- 44 PHPUnit tests passing. PHPStan (level 8) and PHP-CS-Fixer both clean.
-- Committed and pushed to `origin/main` — https://github.com/Relmaur/reactiph
-  (renamed from `ractiph` by the user after Part 2; remote URL updated
-  accordingly, same commit history).
+Per the plan's "timeboxed spike, confirm scope is holding" instruction,
+asked the user how they wanted the checkpoint to work rather than
+assuming; they chose building a small core subset first, proving the
+whole pipeline end-to-end, then pausing to report before continuing —
+this entry is that report.
+
+- `Transpiler\PhpToJs::transpileMethod()`: transpiles one PHP method's
+  source to an equivalent JS function. Supports: property/local-variable
+  reads, arithmetic (`+ - * / %`), **strict** comparison (`=== !==`),
+  relational comparison (`< <= > >=`), boolean ops (`&& || !`), string
+  concatenation (`.`), local variable assignment, `if`/`elseif`/`else`,
+  `return`. Everything else (loops, arrays, `$this->method()` calls,
+  property *writes*, loose `==`/`!=`) throws `TranspileException` — a
+  compile-time error, never silently-wrong JS, per ADR 0003.
+- Two real PHP/JS semantic gaps handled deliberately, not glossed over:
+  PHP's `"0"`-string-is-falsy truthiness (JS disagrees) is replicated via
+  a `__phpBool()` runtime shim (`packages/runtime-js/php-runtime.js`), and
+  loose comparison is rejected outright rather than approximated. See ADR
+  0011 for the full reasoning and the parity tests that specifically
+  probe this.
+- **Parity suite built from day one of this part, per ADR 0006** — not
+  after: `ParityTest` runs the exact same method (read via Reflection
+  from a real fixture class, never duplicated as a separate string) through
+  real PHP and through transpiled-JS-in-Node, asserting identical results.
+  14 cases, including the two truthiness-divergence cases that would fail
+  without `__phpBool`. Test-only `NodeRunner` helper shells out to `node`.
+- `nikic/php-parser` promoted from a transitive (PHPUnit) dependency to a
+  direct one, per ADR 0002.
+- CI (`.github/workflows/ci.yml`) now installs Node — the parity suite is
+  a required test dependency from this part onward, not just local
+  tooling.
+- 71 PHPUnit tests passing (27 new: 13 unit tests on `PhpToJs`'s output
+  shape and allow-list enforcement, 14 parity cases). PHPStan (level 8)
+  and PHP-CS-Fixer both clean.
+- Not yet committed — commits happen on explicit user request; this
+  checkpoint report comes before that ask, in case the user wants changes
+  before it's captured in a commit.
 
 ## Next up
 
-**Part 4 — PHP→JS transpiler MVP.** Not started. **Highest risk — treat
-as a timeboxed spike, confirm scope is holding before continuing to Part
-5.** Needs: `Transpiler\PhpToJs` (nikic/php-parser-based, add it as a
-direct dependency — see `docs/gotchas.md`'s Part 1 entry on it currently
-only being a transitive PHPUnit dependency) supporting a documented PHP
-subset (property get/set, arithmetic/comparison/boolean ops, if/else,
-for/foreach/while, string concat, `$this->method()` calls, arrays) per
-ADR 0003's allow-list philosophy, plus `Transpiler\Stdlib` shimming
-~15-20 builtins. Build the PHP-vs-transpiled-JS parity suite (Node
-required) from day one of this part, per ADR 0006 — not after. Every new
-error case this part introduces should follow ADR 0009 (implement
-`ReactiphException`, named constructors) from the start.
+**Part 4 continued — expand the transpiler's supported subset**, pending
+user go-ahead. Deferred from slice 1: `for`/`foreach`/`while` loops,
+array literals/access, `$this->method()` calls, property *writes*
+(`$this->prop = ...`), and the ~15-20 builtin stdlib shims
+(`Transpiler\Stdlib`, not yet started). Each addition should ship with a
+parity test, per ADR 0006 — the truthiness-shim precedent in ADR 0011 is
+the model for how to handle any other spot where PHP and JS quietly
+disagree, rather than assuming a construct transpiles safely by default.
+
+Once the transpiler's scope is where the plan wants it: **Part 5 —
+Reactive client runtime**, replacing Part 3's hand-written `Counter` stub
+with real transpiled component output, wrapped in a JS `Proxy` for
+reactivity, with `(click)="method"` template bindings (not yet
+implemented in `Parser` — currently only interpolation/attribute
+expressions exist) and a minimal scoped DOM patch step.
 
 ## Remaining parts (unstarted)
 
-5. Reactive client runtime.
 6. Bridge abstraction + `DefaultBridge`.
 7. `reactiph/wordpress-bridge` package.
 8. CLI/dev tooling + docs.
@@ -79,5 +93,12 @@ error case this part introduces should follow ADR 0009 (implement
   client as hydration state vs. stay server-only (ADR 0010) — everything
   public except `slot`/`hydrationId` is serialized today.
 - `packages/runtime-js` has no `package.json`/npm tooling yet — deferred
-  deliberately until Part 5 needs real JS build tooling; Part 3's stub is
-  a single plain `.js` file with no dependencies.
+  deliberately until Part 5 needs real JS build tooling; Part 3's stub and
+  Part 4's runtime helper are single plain `.js` files with no
+  dependencies.
+- Transpiler slice 1 deliberately doesn't cover loops, arrays, method
+  calls, or property writes (see "Next up") — a component method needing
+  any of those can't be transpiled yet.
+- `(click)="method"` event-binding template syntax (shown in the plan's
+  own example and in `CLAUDE.md`'s opening description) doesn't exist yet
+  in `Template\Parser` — needed for Part 5, not designed yet.

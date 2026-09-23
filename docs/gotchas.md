@@ -118,3 +118,21 @@ of using the `chrome-devtools-mcp` tool calls. Reuse this pattern rather
 than fighting the shared-profile lock, unless you've confirmed no other
 session has the shared browser open (e.g. every peer in `ListAgents` shows
 `idle`).
+
+## Part 4 — Transpiler
+
+### `dirname(__DIR__, N)` — count directory levels from `__DIR__` itself, not from the file
+
+In `tests/Transpiler/Support/NodeRunner.php` (three levels below the repo
+root: `tests/Transpiler/Support/`), first wrote `dirname(__DIR__, 4)` to
+reach the repo root and got "could not read
+packages/runtime-js/php-runtime.js" — off by one. `__DIR__` there is
+already `.../tests/Transpiler/Support`, so `dirname(__DIR__, 1)` is
+`.../tests/Transpiler`, `dirname(__DIR__, 2)` is `.../tests`, and
+`dirname(__DIR__, 3)` is the repo root — three hops, not four. The mistake
+was mentally counting the file's own path segments (`tests/Transpiler/
+Support/NodeRunner.php` — 4 segments including the filename) instead of
+counting `dirname()` calls *starting from the directory `__DIR__` already
+is*, which is one hop shorter. Worth double-checking with a quick
+`var_dump(dirname(__DIR__, N))` (or just running the test and reading the
+error) rather than trusting mental arithmetic here.
