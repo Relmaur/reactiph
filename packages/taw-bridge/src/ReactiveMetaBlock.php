@@ -9,6 +9,7 @@ use Reactiph\Runtime\HydrationSerializer;
 use Reactiph\Transpiler\ComponentTranspiler;
 use Reactiph\WordPressBridge\WordPressBridge;
 use TAW\Core\Block\MetaBlock;
+use TAW\Core\Editor\VisualEditor;
 
 /**
  * A TAW MetaBlock whose markup and client-side reactivity come from a
@@ -98,6 +99,12 @@ abstract class ReactiveMetaBlock extends MetaBlock
         }
     }
 
+    /**
+     * Mirrors `MetaBlock::render()`'s own visual-editor wrapper exactly —
+     * a Reactive block still needs `data-taw-block-section` present when
+     * the visual editor is active, or TAW's editor silently can't find or
+     * highlight it, the same as any other block.
+     */
     public function render(?int $postId = null): void
     {
         $postId = $postId !== null ? $postId : get_the_ID();
@@ -106,6 +113,17 @@ abstract class ReactiveMetaBlock extends MetaBlock
             return;
         }
 
+        if (VisualEditor::isActive()) {
+            echo '<div data-taw-block-section="' . esc_attr($this->id) . '">';
+            $this->renderComponent($postId);
+            echo '</div>';
+        } else {
+            $this->renderComponent($postId);
+        }
+    }
+
+    private function renderComponent(int $postId): void
+    {
         $data = $this->getData($postId);
         $componentClass = $this->componentClass();
 

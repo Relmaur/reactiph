@@ -134,3 +134,12 @@ if (!function_exists('rest_url')) {
         return 'https://example.test/wp-json/' . ltrim($path, '/');
     }
 }
+
+if (!function_exists('esc_attr')) {
+    function esc_attr(string $text): string
+    {
+        reactiph_wp_stub_record('esc_attr', [$text]);
+
+        return htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
+    }
+}

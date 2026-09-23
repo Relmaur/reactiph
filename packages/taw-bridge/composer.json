@@ -1,6 +1,6 @@
 {
     "name": "reactiph/taw-bridge",
-    "description": "Reactiph integration for the TAW theme framework: a ReactiveMetaBlock block type, and a BridgeInterface implementation reusing WordPressBridge underneath (a TAW site is a real WordPress site).",
+    "description": "Reactiph integration for the TAW theme framework: a ReactiveMetaBlock block type that composes reactiph/wordpress-bridge's WordPressBridge for asset/RPC delivery (a TAW site is a real WordPress site) -- no new BridgeInterface implementation.",
     "type": "library",
     "license": "MIT",
     "require": {

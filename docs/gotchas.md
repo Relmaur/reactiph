@@ -240,3 +240,41 @@ files are real, unmodified `taw/core` source being autoloaded directly.
 Worth checking for this exact guard pattern (`if (!defined('ABSPATH'))`)
 in any other real WordPress-ecosystem package pulled in via a path
 repository for testing, not just `taw/core` specifically.
+
+### `ReactiveMetaBlock` silently omitted `MetaBlock::render()`'s visual-editor wrapper
+
+Caught by the `reactiph-docs` peer session while writing up ADR 0021, not
+by this package's own test suite — the hand-rolled `taw/core` function
+stubs don't exercise TAW's visual editor at all, so nothing here would
+have failed even with the bug in place. `MetaBlock::render()` wraps its
+output in `<div data-taw-block-section="...">` whenever
+`VisualEditor::isActive()` is true, which is how TAW's visual editor finds
+and highlights a block's DOM for inline editing.
+`ReactiveMetaBlock::render()` overrides `render()` entirely (it has to, to
+build a fresh component instance per call) and the first version just
+never re-added that wrapper — a Reactive block would render correctly on
+a normal page load but be invisible to the visual editor. Fixed by
+mirroring the parent's exact check. Lesson: when a subclass fully
+overrides a method rather than calling `parent::method()`, diff the
+parent's real behavior line by line, not just its signature — a stubbed
+test environment that doesn't touch the overridden concern (visual
+editing, here) won't catch the omission.
+
+### Nothing calls `WordPressBridge::registerRoutes()` for a TAW site — it's the host theme's job, but nothing said so where it mattered
+
+`WordPressBridge::registerRoutes()` is documented (`@see registerRoutes()`
+in `WordPressBridge`'s own class docblock) as something the host wires to
+`rest_api_init` itself — `examples/wordpress-plugin/reactiph-demo.php`
+does exactly that. `examples/taw-block/Counter/` has no equivalent
+bootstrap file (a TAW block is just a class dropped into `Blocks/`, not a
+plugin with its own entry point), so nothing in this repo told a TAW
+theme author they still need to add that `rest_api_init` hook themselves.
+Without it, `hydrate.js`/`php-runtime.js` and the RPC endpoint both 404 —
+SSR markup, hydration manifest, and block auto-discovery all still work,
+which makes this the kind of gap that looks like a deep bug ("the button
+does nothing") but is actually one missing line in `functions.php`. Not a
+code fix in this package (the host-owns-registration design is
+deliberate, matching `wordpress-bridge`'s existing pattern) — the
+`reactiph-docs` `taw-bridge.mdx` page and `examples/taw-block/`'s own
+`README` (if one gets added) need to say this explicitly rather than
+assuming it's obvious from `wordpress-bridge`'s docs alone.
