@@ -72,6 +72,13 @@ section is the short version.
   `ParseException::missingClosingTag(...)`), never `new Xyz($message)`.
   This is a standing convention for every future part, not a one-time
   deliverable. (ADR 0009)
+- **A component's root element gets `data-reactiph-id` when
+  `$hydrationId` is set**, and its state is serialized into a
+  `#reactiph-hydration` `<script type="application/json">` island — the
+  manifest a hydration client reads to find and attach to server-rendered
+  DOM. Only works when the template's root is a single literal HTML tag;
+  silently inert otherwise (a known limitation, not yet an error). (ADR
+  0010)
 
 ## Build order
 
@@ -88,10 +95,13 @@ verified, with explicit go-ahead before the next.
 8. CLI/dev tooling (watch mode, production build) + docs.
 
 **Verification per part:** PHPUnit passing for anything server-side. For
-Parts 4-6 specifically, a live check is additionally required — a
+Parts 3-6 specifically, a live check is additionally required — a
 Node-executed parity assertion (transpiler) or an actual browser load
 (hydration/reactivity). Unit tests alone don't count once a browser or
-Node runtime is in the loop.
+Node runtime is in the loop. (Part 3's live check needs an isolated
+browser, not the shared `chrome-devtools-mcp` profile — see the "Part 3 —
+Hydration" entry in `docs/gotchas.md` before assuming that tool just
+works.)
 
 ## Working in this repo
 
@@ -102,7 +112,10 @@ composer analyse           # PHPStan, level 8, src/ only
 composer cs-check          # PHP-CS-Fixer, dry-run
 composer cs-fix            # PHP-CS-Fixer, apply fixes
 composer check              # test + analyse + cs-check together
-php examples/render.php   # run Part 1's manual smoke test
+php examples/render.php    # run Part 1's manual smoke test
+php examples/blog.php      # run Part 2's manual smoke test
+php examples/errors.php    # run the exception-foundation smoke test
+php examples/hydrate.php   # generate examples/hydrate-output.html (Part 3) — open it in a browser
 ```
 
 CI (`.github/workflows/ci.yml`) runs `test`, `analyse`, and `cs-check` on

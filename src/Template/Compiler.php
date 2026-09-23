@@ -26,6 +26,16 @@ use Reactiph\Template\Node\TextNode;
  * HTML: attribute values become props assigned onto the child instance, and
  * the tag's children are pre-rendered (in the parent's variable scope) into
  * the child's `slot` property.
+ *
+ * When a template's single top-level node is a literal HTML tag (not a
+ * component tag), that tag is the compiled closure's "root" and additionally
+ * emits `data-reactiph-id="..."` when `$component->hydrationId` is set —
+ * this is how a hydration client (see {@see \Reactiph\Runtime\HydrationSerializer})
+ * locates the DOM node a server-rendered component owns. A template that
+ * doesn't have exactly one HTML-tag root (multiple top-level nodes, or a
+ * component tag as the root) compiles the same as before but the id is
+ * never emitted anywhere — setting `hydrationId` on such a component is
+ * currently a silent no-op, not an error. See ADR 0010.
  */
 final class Compiler
 {
@@ -41,7 +51,7 @@ final class Compiler
         $source = 'return function (\\' . BaseComponent::class . ' $component): string {'
             . 'extract(get_object_vars($component));'
             . '$__html = "";'
-            . $this->compileNodes($nodes, '$__html')
+            . $this->compileRootNodes($nodes, '$__html')
             . 'return $__html;'
             . '};';
 
@@ -49,6 +59,18 @@ final class Compiler
         assert($closure instanceof \Closure);
 
         return $closure;
+    }
+
+    /**
+     * @param Node[] $nodes
+     */
+    private function compileRootNodes(array $nodes, string $bufferVar): string
+    {
+        if (count($nodes) === 1 && $nodes[0] instanceof TagNode && !TagNode::isComponentName($nodes[0]->name)) {
+            return $this->compileHtmlTag($nodes[0], $bufferVar, isRoot: true);
+        }
+
+        return $this->compileNodes($nodes, $bufferVar);
     }
 
     /**
@@ -77,7 +99,7 @@ final class Compiler
         };
     }
 
-    private function compileHtmlTag(TagNode $node, string $bufferVar): string
+    private function compileHtmlTag(TagNode $node, string $bufferVar, bool $isRoot = false): string
     {
         $code = $this->emitLiteral('<' . $node->name, $bufferVar);
 
@@ -87,6 +109,13 @@ final class Compiler
                 ? $this->emitEscaped($value->expression, $bufferVar)
                 : $this->emitLiteral($value, $bufferVar);
             $code .= $this->emitLiteral('"', $bufferVar);
+        }
+
+        if ($isRoot) {
+            $code .= 'if (isset($hydrationId)) {' . "\n";
+            $code .= '    ' . $bufferVar . ' .= \' data-reactiph-id="\''
+                . ' . htmlspecialchars((string) $hydrationId, ENT_QUOTES, \'UTF-8\') . \'"\';' . "\n";
+            $code .= '}' . "\n";
         }
 
         if ($node->selfClosing) {

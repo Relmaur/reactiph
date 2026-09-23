@@ -88,3 +88,33 @@ the trait's implicit contract (it only works when the host class extends
 `\Throwable`), not as a fix for a real analysis failure. Don't assume this
 generalizes to every trait/host-method situation — re-verify rather than
 assume PHPStan needs (or doesn't need) an abstract declaration elsewhere.
+
+## Part 3 — Hydration
+
+### `chrome-devtools-mcp`'s browser profile is shared across every session on the machine, and simultaneous sessions collide
+
+`chrome-devtools-mcp` launches Chrome against a fixed, single profile
+directory (`~/.cache/chrome-devtools-mcp/chrome-profile`) regardless of
+which project or Claude session invokes it. If another session on the
+same machine already has a browser open against that profile,
+`new_page`/`list_pages` fail outright with "The browser is already
+running for ... Use a different `userDataDir`" — there's no way for a
+second session to attach to a browser a *different* chrome-devtools-mcp
+server process launched (it uses a private debugging pipe to its own
+child process, not a shared TCP CDP endpoint), and killing that Chrome
+process risks interrupting whatever the other session is doing with it —
+checked `ListAgents` and found another session showing `busy`, so did not
+assume it was safe to kill.
+
+**Workaround used**: `chrome-devtools-mcp`'s own npm cache already has
+`puppeteer-core` installed (found via `find ~/.npm/_npx -iname
+puppeteer-core`); required it directly from a standalone Node script with
+a fresh, isolated `userDataDir` (in the scratchpad directory) and an
+explicit `executablePath` pointing at the real Chrome binary. This gets
+real headless-browser verification (navigate, click, read the DOM back)
+with zero risk of touching another session's browser and no new
+downloads, at the cost of writing the interaction script by hand instead
+of using the `chrome-devtools-mcp` tool calls. Reuse this pattern rather
+than fighting the shared-profile lock, unless you've confirmed no other
+session has the shared browser open (e.g. every peer in `ListAgents` shows
+`idle`).

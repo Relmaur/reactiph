@@ -32,6 +32,18 @@ abstract class BaseComponent
     public string $slot = '';
 
     /**
+     * A caller-assigned, unique-per-page identifier marking this component
+     * as a hydration root. When set (and the template's single top-level
+     * node is a literal HTML tag — see {@see \Reactiph\Template\Compiler}),
+     * `render()` emits it as `data-reactiph-id` on the root element, so a
+     * client-side hydration script can find the corresponding DOM node.
+     * Null (the default) for a component that's never hydrated — plain SSR
+     * output is unaffected either way. See
+     * {@see \Reactiph\Runtime\HydrationSerializer}.
+     */
+    public ?string $hydrationId = null;
+
+    /**
      * The component's markup. See {@see Parser} for the supported syntax.
      */
     abstract public function template(): string;
