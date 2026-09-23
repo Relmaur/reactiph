@@ -71,6 +71,14 @@ final class ParityTest extends TestCase
         yield 'negative addition' => ['sum', ['a' => -5, 'b' => 2]];
         yield 'division producing a float' => ['divide', ['a' => 7, 'b' => 2]];
         yield 'string concatenation' => ['greeting', ['name' => 'Reactiph']];
+
+        // PHP casts true to "1" and false to "" when stringified — not
+        // "true"/"false" like JS's native String() does. Caught while
+        // implementing stdlib builtins; fixed via __phpString() (ADR
+        // 0014). These two cases would fail against the old raw String()
+        // codegen.
+        yield 'string concatenation: true stringifies to "1"' => ['activeLabel', ['active' => true]];
+        yield 'string concatenation: false stringifies to ""' => ['activeLabel', ['active' => false]];
         yield 'strict equality: equal' => ['isEqual', ['a' => 5, 'b' => 5]];
         yield 'strict equality: not equal' => ['isEqual', ['a' => 5, 'b' => 6]];
         yield 'relational comparison' => ['isGreater', ['a' => 10, 'b' => 3]];

@@ -433,7 +433,10 @@ final class PhpToJs
 
     private function compileConcat(Expr\BinaryOp\Concat $expr): string
     {
-        return '(String(' . $this->compileExpr($expr->left) . ') + String(' . $this->compileExpr($expr->right) . '))';
+        $left = '__phpString(' . $this->compileExpr($expr->left) . ')';
+        $right = '__phpString(' . $this->compileExpr($expr->right) . ')';
+
+        return "({$left} + {$right})";
     }
 
     private function compileConstFetch(Expr\ConstFetch $expr): string

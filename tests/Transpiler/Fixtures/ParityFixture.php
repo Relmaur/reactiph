@@ -18,6 +18,7 @@ final class ParityFixture
     public string $flag = '';
     public array $items = [];
     public array $labels = [];
+    public bool $active = false;
 
     public function sum(): int
     {
@@ -32,6 +33,11 @@ final class ParityFixture
     public function greeting(): string
     {
         return 'Hello, ' . $this->name . '!';
+    }
+
+    public function activeLabel(): string
+    {
+        return 'active: ' . $this->active;
     }
 
     public function isEqual(): bool

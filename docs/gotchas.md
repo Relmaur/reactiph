@@ -151,3 +151,20 @@ General lesson: once the transpiler supports property writes, every
 parity case for a mutating method needs its "before" state snapshotted
 before the PHP call, not assumed to still match the data provider's input
 array (which itself doesn't get mutated — the object does).
+
+### Passing parity tests only prove parity for the types they actually exercised
+
+`compileConcat()` shipped in slice 1 using JS's native `String()` for
+both operands. `String(true)` is `"true"` in JS; PHP's own boolean cast
+gives `"1"`. Slice 1's parity case for concatenation (`greeting`) only
+ever passed a *string* property (`name`) through it — it never exercised
+a boolean operand, so the divergence shipped silently and stayed shipped
+across slices 2 and 3 until noticed while implementing an unrelated
+builtin (`implode()`, which needed the same stringification logic). Fixed
+in ADR 0014 with a `__phpString()` runtime helper and two new parity
+cases using a real `bool` fixture property. Lesson: "this construct has a
+passing parity test" only proves parity for the specific *types* that
+test happened to pass through it — when adding a new construct (or
+revisiting an old one), check it against every type in the fixture's
+property set that could plausibly reach it, not just whichever one the
+first test case reached for.

@@ -30,6 +30,23 @@ function __phpBool(value) {
 }
 
 /**
+ * PHP's string-cast rules, applied wherever transpiled code stringifies a
+ * value (string concatenation, and any future builtin like implode()
+ * that does the same). PHP and JS diverge here too: PHP casts `true` to
+ * `"1"` and `false` to `""`, not `"true"`/`"false"` — covered by
+ * ParityTest's boolean-concatenation cases.
+ */
+function __phpString(value) {
+    if (value === true) {
+        return '1';
+    }
+    if (value === false || value === null || value === undefined) {
+        return '';
+    }
+    return String(value);
+}
+
+/**
  * `foreach`'s [key, value] pairs, for either JS representation a
  * transpiled PHP array can have (see docs/adr/0013-*.md): a list-style
  * PHP array transpiles to a JS Array (keys are numeric indices), an

@@ -52,11 +52,14 @@ final class PhpToJsTest extends TestCase
         self::assertStringContainsString('if (__phpBool((__phpBool(this.a) && __phpBool(this.b))))', $js);
     }
 
-    public function testStringConcatenationCoercesBothSidesWithJsString(): void
+    public function testStringConcatenationUsesPhpStringifyRules(): void
     {
         $js = (new PhpToJs())->transpileMethod('public function g(): string { return $this->a . $this->b; }');
 
-        self::assertSame("function g() {\nreturn (String(this.a) + String(this.b));\n}\n", $js);
+        self::assertSame(
+            "function g() {\nreturn (__phpString(this.a) + __phpString(this.b));\n}\n",
+            $js,
+        );
     }
 
     public function testStrictComparisonUsesTripleEquals(): void
