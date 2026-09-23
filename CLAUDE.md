@@ -243,6 +243,23 @@ section is the short version.
   process invocation (`proc_open`, not just an in-process call) since a
   stream substitution doesn't prove the shebang/argv/autoload-bootstrap
   wiring actually works. (ADR 0022)
+- **`.github/workflows/monorepo-split.yml`** mirrors `packages/wordpress-bridge`
+  and `packages/taw-bridge` into their own public repos
+  (`github.com/Relmaur/reactiph-wordpress-bridge`,
+  `github.com/Relmaur/reactiph-taw-bridge`) on every push to `main` and
+  every tag, via `danharrin/monorepo-split-github-action` — so a
+  consumer (`taw-theme`) can install either one as a normal Composer
+  `vcs` repository + version constraint, the same frictionless way it
+  already installs `taw/core`, instead of a local `path` repository that
+  only works on a machine with this monorepo checked out. Mirrors
+  *current directory contents* per change (one new commit per run), not
+  a full git-history rewrite — the split repos exist to be
+  `composer install`'d, not read as their own development history.
+  `reactiph` itself (this repo) and both split repos are public — both
+  split packages depend on `reactiph/reactiph`, so a private core
+  package would have undercut the whole point. Development still happens
+  in this one monorepo; the split repos are CI-managed mirrors, not
+  places to commit directly. (ADR 0023)
 
 ## Build order
 

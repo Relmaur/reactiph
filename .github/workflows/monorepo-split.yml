@@ -1,0 +1,63 @@
+name: Monorepo Split
+
+# Mirrors packages/wordpress-bridge and packages/taw-bridge into their own
+# standalone GitHub repos on every push to main and every tag, so a
+# consuming project (a taw-theme) can install either one via a normal
+# Composer `vcs` repository + version constraint -- the same way it
+# already installs taw/core -- instead of a local `path` repository that
+# only works on a machine with this monorepo checked out next to it.
+#
+# Uses danharrin/monorepo-split-github-action, which mirrors each package
+# directory's *current* contents into its target repo as one new commit
+# per change (not a full git-subtree history rewrite) -- simpler, and
+# sufficient here since nothing depends on per-file historical blame
+# surviving the split.
+#
+# reactiph/reactiph itself (this repo's root) needs no split -- it's
+# already installable directly via a `vcs` repository pointing at this
+# repo, since its own composer.json already lives at the root.
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - '*'
+
+env:
+  GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+
+jobs:
+  split:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - local_path: wordpress-bridge
+            split_repository: reactiph-wordpress-bridge
+          - local_path: taw-bridge
+            split_repository: reactiph-taw-bridge
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: danharrin/monorepo-split-github-action@v2.4.5
+        with:
+          package_directory: packages/${{ matrix.package.local_path }}
+          repository_organization: Relmaur
+          repository_name: ${{ matrix.package.split_repository }}
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+
+      - if: "startsWith(github.ref, 'refs/tags/')"
+        uses: danharrin/monorepo-split-github-action@v2.4.5
+        with:
+          tag: ${GITHUB_REF#refs/tags/}
+          package_directory: packages/${{ matrix.package.local_path }}
+          repository_organization: Relmaur
+          repository_name: ${{ matrix.package.split_repository }}
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'

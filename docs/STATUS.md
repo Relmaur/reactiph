@@ -39,6 +39,29 @@ live-verified** (`examples/wordpress-plugin/reactiph-demo.php`) — see
 "Live verification results" below. This closes out the last open
 verification debt; nothing is currently pending a live check.
 
+**Monorepo-split CI is set up (ADR 0023), not yet fully live.**
+`.github/workflows/monorepo-split.yml` mirrors `packages/wordpress-bridge`
+and `packages/taw-bridge` into their own public repos
+(`github.com/Relmaur/reactiph-wordpress-bridge`,
+`github.com/Relmaur/reactiph-taw-bridge`) on every push to `main` and
+every tag, via `danharrin/monorepo-split-github-action` — this was the
+actual answer to "how do we make `wordpress-bridge`/`taw-bridge`
+installable the way `taw-theme` already installs `taw/core`" (a plain
+`vcs` repository + version constraint, no local path repo). `reactiph`
+itself (this repo) and both new split repos were made public, since both
+split packages depend on `reactiph/reactiph` — a private core package
+would have undercut the whole point. Both target repos already exist
+(created empty). **Still needed before this actually runs
+successfully**: a fine-grained GitHub PAT (scoped to just the two split
+repos, `Contents: Read and write`) added as this repo's `ACCESS_TOKEN`
+Actions secret — deliberately not something an agent creates or handles,
+since that's a live credential. Until that secret exists, the workflow
+will run on the next push to `main` and fail cleanly (not silently) with
+a clear "access token missing" error. Separate, still-undone follow-up
+once the secret's in place: update `taw-theme`'s own `composer.json` to
+replace its `path` repository entries for `reactiph`/`wordpress-bridge`/
+`taw-bridge` with `vcs` entries against the real repos.
+
 ## `reactiph/taw-bridge` (ADR 0021)
 
 Built, tested against the real `taw/core`, and live-verified end to end
@@ -255,3 +278,23 @@ up" above and "Open threads" below instead.
   `ReactiphShortcode` and `ReactiveMetaBlock` (ADR 0021) — small enough
   to leave unshared for now, worth revisiting if a third integration
   point needs it too.
+- **Monorepo-split CI (ADR 0023) needs its `ACCESS_TOKEN` PAT secret
+  added before it'll actually succeed** — currently fails cleanly on the
+  next push to `main` until that's done (see "Current work").
+- **`reactiph/reactiph` has no real semver tags** — everything installs
+  as `dev-main`, which is why `taw-theme` (and any future consumer) needs
+  `"minimum-stability": "dev"` set globally rather than a clean version
+  constraint. Tagging real releases would fix this and would also tag
+  both split repos to match (the split workflow's tag-triggered step) —
+  not done yet, separate follow-up from the split CI itself.
+- **`taw-theme`'s own `composer.json` still uses `path` repositories**
+  for `reactiph`/`wordpress-bridge`/`taw-bridge` — updating it to use
+  `vcs` repositories against the new public split repos (and the main
+  `reactiph` repo) instead is the actual point of ADR 0023, but is a
+  change to a different repo, not done as part of building the split CI
+  itself.
+- **`reactiph-wordpress-bridge`/`reactiph-taw-bridge` are CI-managed
+  mirrors** (ADR 0023) — a change made directly in either split repo
+  would be silently overwritten by the next split run. Both repos'
+  descriptions say so; nothing enforces it technically yet (e.g. branch
+  protection).
