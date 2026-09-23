@@ -105,6 +105,32 @@ final class CompilerTest extends TestCase
         self::assertSame('<div class="card"><h2>Empty</h2><div class="card-body"></div></div>', $html);
     }
 
+    public function testEventBindingCompilesToADataAttribute(): void
+    {
+        $html = $this->render('<button (click)="increment">+</button>', []);
+
+        self::assertSame('<button data-reactiph-on-click="increment">+</button>', $html);
+    }
+
+    public function testEventBindingCoexistsWithOrdinaryAttributesAndHydrationId(): void
+    {
+        $ast = (new Parser())->parse('<button type="button" (click)="increment">+</button>');
+        $renderer = (new Compiler())->compile($ast);
+
+        $component = new class () extends BaseComponent {
+            public function template(): string
+            {
+                return '';
+            }
+        };
+        $component->hydrationId = 'c1';
+
+        self::assertSame(
+            '<button type="button" data-reactiph-on-click="increment" data-reactiph-id="c1">+</button>',
+            $renderer->call($component, $component),
+        );
+    }
+
     /**
      * @param array<string, mixed> $props
      */

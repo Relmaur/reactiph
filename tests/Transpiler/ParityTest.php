@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Reactiph\Tests\Transpiler\Fixtures\ParityFixture;
 use Reactiph\Tests\Transpiler\Support\NodeRunner;
+use Reactiph\Transpiler\MethodSourceReader;
 use Reactiph\Transpiler\PhpToJs;
 
 /**
@@ -15,9 +16,10 @@ use Reactiph\Transpiler\PhpToJs;
  * the exact same PHP method through real PHP and through
  * transpiled-JS-in-Node, and assert identical output. The method source
  * fed to the transpiler is read directly out of ParityFixture via
- * Reflection (see methodSource()) — never duplicated as a separate string
- * literal — so there's no way for the "PHP" and "JS" sides of a case to
- * silently drift apart from each other.
+ * {@see MethodSourceReader} (real framework code, also used by
+ * {@see \Reactiph\Transpiler\ComponentTranspiler}) — never duplicated as
+ * a separate string literal — so there's no way for the "PHP" and "JS"
+ * sides of a case to silently drift apart from each other.
  */
 final class ParityTest extends TestCase
 {
@@ -48,12 +50,12 @@ final class ParityTest extends TestCase
         $phpResult = $fixture->{$method}();
 
         $transpiler = new PhpToJs();
-        $js = $transpiler->transpileMethod(self::methodSource(ParityFixture::class, $method));
+        $js = $transpiler->transpileMethod(self::methodSource($method));
 
         $supportingJs = [];
         foreach ($supportingMethods as $supportingMethod) {
             $supportingJs[$supportingMethod] = $transpiler->transpileMethod(
-                self::methodSource(ParityFixture::class, $supportingMethod),
+                self::methodSource($supportingMethod),
             );
         }
 
@@ -156,27 +158,8 @@ final class ParityTest extends TestCase
             ['replacedName', ['flag' => 'l', 'name' => 'hello']];
     }
 
-    /**
-     * @param class-string $class
-     */
-    private static function methodSource(string $class, string $method): string
+    private static function methodSource(string $method): string
     {
-        $reflection = new \ReflectionMethod($class, $method);
-        $filename = $reflection->getFileName();
-
-        if ($filename === false) {
-            throw new \RuntimeException("Could not locate source file for {$class}::{$method}().");
-        }
-
-        $lines = file($filename);
-
-        if ($lines === false) {
-            throw new \RuntimeException("Could not read {$filename}.");
-        }
-
-        $startLine = $reflection->getStartLine();
-        $endLine = $reflection->getEndLine();
-
-        return implode('', array_slice($lines, $startLine - 1, $endLine - $startLine + 1));
+        return MethodSourceReader::read(new \ReflectionMethod(ParityFixture::class, $method));
     }
 }

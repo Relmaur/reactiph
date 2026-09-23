@@ -19,12 +19,17 @@ final class TagNode implements Node
      *   matching closing tag (a void HTML element like `<img>`) — distinct
      *   from a normal tag that merely has no children, e.g. `<div></div>`,
      *   which still needs its closing tag emitted.
+     * @param array<string, string> $events Event bindings written as
+     *   `(click)="increment"` — event name to the (bare, not `{$expr}`)
+     *   component method name to call. Only valid on a literal HTML tag;
+     *   the parser rejects this on a component tag (`<PascalCase />`).
      */
     public function __construct(
         public readonly string $name,
         public readonly array $attributes,
         public readonly array $children,
         public readonly bool $selfClosing = false,
+        public readonly array $events = [],
     ) {
     }
 

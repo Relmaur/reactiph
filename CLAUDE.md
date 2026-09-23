@@ -104,6 +104,20 @@ section is the short version.
   and stayed shipped for two more slices before being caught — see ADR
   0014 and the "types actually exercised" entry in `docs/gotchas.md`.
   (ADR 0011-0015)
+- **`(click)="method"` compiles to a real `data-reactiph-on-click="method"`
+  DOM attribute**, on whichever tag declares it (root or not) — no
+  manifest bookkeeping needed, since the binding is fully recoverable
+  from the rendered DOM. The client runtime (`packages/runtime-js/hydrate.js`,
+  replacing Part 3's throwaway stub) attaches one delegated listener per
+  hydration root rather than one per bound element.
+  `Transpiler\ComponentTranspiler` assembles a component class's own
+  declared methods (excluding inherited/magic ones) into one JS
+  definition registered on `window.ReactiphComponents`, shared across
+  every instance of that class on the page. Live-verified in a browser:
+  clicking a bound button runs the *real* transpiled method and mutates
+  state correctly across repeated clicks — but does not yet patch the
+  visible DOM, which is a deliberately separate, not-yet-designed next
+  step. (ADR 0016)
 
 ## Build order
 
@@ -140,7 +154,7 @@ composer check              # test + analyse + cs-check together
 php examples/render.php    # run Part 1's manual smoke test
 php examples/blog.php      # run Part 2's manual smoke test
 php examples/errors.php    # run the exception-foundation smoke test
-php examples/hydrate.php   # generate examples/hydrate-output.html (Part 3) — open it in a browser
+php examples/hydrate.php   # generate examples/hydrate-output.html (Parts 3 & 5) — open it in a browser
 ```
 
 CI (`.github/workflows/ci.yml`) runs `test`, `analyse`, and `cs-check` on

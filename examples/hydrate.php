@@ -3,12 +3,20 @@
 declare(strict_types=1);
 
 /**
- * Manual smoke test for Part 3 (hydration payload + client bootstrap).
- * Generates a static HTML page — server-rendered markup plus an embedded
- * hydration manifest — that a real browser can load to prove the
- * hand-written JS stub (packages/runtime-js/hydrate-stub.js) attaches to
- * the existing DOM and makes the Increment button work, without any
- * server round-trip or client-side re-render. Run with:
+ * Manual smoke test for Part 5 slice 1 (click bindings + real transpiled
+ * method execution), building on Part 3's hydration payload wiring.
+ * Generates a static HTML page -- server-rendered markup, an embedded
+ * hydration manifest, and the Counter component's own increment()
+ * method transpiled to real JS by ComponentTranspiler -- that a real
+ * browser can load to prove clicking the button runs the ACTUAL
+ * transpiled PHP method (not hand-written JS, unlike Part 3's stub) and
+ * mutates state.
+ *
+ * This does NOT yet patch the DOM after that mutation -- see
+ * docs/STATUS.md's "Next up" for why that's a deliberately separate,
+ * not-yet-designed piece. Watch the browser console and the
+ * data-reactiph-debug-state attribute the runtime writes to see the new
+ * state after clicking. Run with:
  *   php examples/hydrate.php
  * then open examples/hydrate-output.html in a browser.
  */
@@ -17,6 +25,7 @@ require __DIR__ . '/../vendor/autoload.php';
 
 use Reactiph\Component\BaseComponent;
 use Reactiph\Runtime\HydrationSerializer;
+use Reactiph\Transpiler\ComponentTranspiler;
 
 final class Counter extends BaseComponent
 {
@@ -25,8 +34,13 @@ final class Counter extends BaseComponent
     public function template(): string
     {
         return <<<'HTML'
-<div class="counter"><span class="count">{$count}</span><button type="button" class="increment">Increment</button></div>
+<div class="counter"><span class="count">{$count}</span><button type="button" (click)="increment">Increment</button></div>
 HTML;
+    }
+
+    public function increment(): void
+    {
+        $this->count = $this->count + 1;
     }
 }
 
@@ -36,20 +50,26 @@ $counter->hydrationId = 'counter-1';
 
 $ssrHtml = $counter->render();
 $hydrationScript = HydrationSerializer::toScriptTag([HydrationSerializer::payloadFor($counter)]);
+$componentJs = (new ComponentTranspiler())->transpileComponent(Counter::class);
 
 $page = <<<HTML
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>Reactiph hydration demo (Part 3)</title>
+    <title>Reactiph hydration demo (Part 5 slice 1)</title>
 </head>
 <body>
-    <p>Server-rendered count is 3. Click Increment — it should update to 4, 5, ...
-    entirely client-side, with no page reload or network request.</p>
+    <p>Server-rendered count is 3. Click Increment: the REAL transpiled
+    <code>increment()</code> method runs client-side (open the devtools
+    console to see it log the new state, and inspect the
+    <code>data-reactiph-debug-state</code> attribute on the div below).
+    The visible DOM text doesn't update yet -- that's a deliberately
+    separate, not-yet-built piece.</p>
     {$ssrHtml}
     {$hydrationScript}
-    <script src="../packages/runtime-js/hydrate-stub.js"></script>
+    <script>{$componentJs}</script>
+    <script src="../packages/runtime-js/hydrate.js"></script>
 </body>
 </html>
 
@@ -60,3 +80,4 @@ file_put_contents($outputPath, $page);
 
 echo "Wrote {$outputPath}\n";
 echo "SSR output: {$ssrHtml}\n";
+echo "Transpiled component JS:\n{$componentJs}\n";

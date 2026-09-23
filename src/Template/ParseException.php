@@ -133,4 +133,57 @@ final class ParseException extends \RuntimeException implements ReactiphExceptio
             'Add the closing "}" for this {$expr} interpolation.',
         );
     }
+
+    public static function malformedEventBindingName(int $offset): self
+    {
+        $e = new self(sprintf('Malformed event binding at offset %d.', $offset));
+
+        return $e->withDiagnostics(
+            'template.malformed_event_binding_name',
+            ['offset' => $offset],
+            'An event binding must be "(name)", e.g. "(click)".',
+        );
+    }
+
+    public static function expectedEventBindingValue(string $eventName, int $offset): self
+    {
+        $e = new self(sprintf('Expected "=" after (%s) at offset %d.', $eventName, $offset));
+
+        return $e->withDiagnostics(
+            'template.expected_event_binding_value',
+            ['event' => $eventName, 'offset' => $offset],
+            sprintf('Write (%s)="methodName".', $eventName),
+        );
+    }
+
+    public static function eventBindingValueMustBeAMethodName(string $eventName, int $offset): self
+    {
+        $e = new self(sprintf(
+            '(%s)="..." must be a plain method name, not a {$expr} expression, at offset %d.',
+            $eventName,
+            $offset,
+        ));
+
+        return $e->withDiagnostics(
+            'template.event_binding_value_must_be_method_name',
+            ['event' => $eventName, 'offset' => $offset],
+            sprintf('Write (%s)="methodName", not (%s)="{$expr}".', $eventName, $eventName),
+        );
+    }
+
+    public static function eventBindingOnComponentTag(string $tagName, int $offset): self
+    {
+        $e = new self(sprintf(
+            'Event bindings are not supported on component tags (<%s> at offset %d).',
+            $tagName,
+            $offset,
+        ));
+
+        return $e->withDiagnostics(
+            'template.event_binding_on_component_tag',
+            ['tag' => $tagName, 'offset' => $offset],
+            'Event bindings only attach to a real DOM element; put the binding on an HTML tag inside '
+                . 'the component instead.',
+        );
+    }
 }

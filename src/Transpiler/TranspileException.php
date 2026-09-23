@@ -110,4 +110,14 @@ final class TranspileException extends \RuntimeException implements ReactiphExce
             'Pass true as the third argument: in_array($needle, $haystack, true).',
         );
     }
+
+    public static function couldNotReadMethodSource(string $class, string $method): self
+    {
+        $e = new self(sprintf('Could not read source for %s::%s().', $class, $method));
+
+        return $e->withDiagnostics(
+            'transpiler.could_not_read_method_source',
+            ['class' => $class, 'method' => $method],
+        );
+    }
 }

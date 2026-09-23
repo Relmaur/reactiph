@@ -106,33 +106,39 @@ final class Parser
             throw ParseException::expectedTagName($start);
         }
 
-        $attributes = $this->parseAttributes();
+        [$attributes, $events] = $this->parseAttributes();
+
+        if ($events !== [] && TagNode::isComponentName($name)) {
+            throw ParseException::eventBindingOnComponentTag($name, $start);
+        }
+
         $this->skipWhitespace();
 
         if ($this->lookingAt('/>')) {
             $this->pos += 2;
-            return new TagNode($name, $attributes, [], selfClosing: true);
+            return new TagNode($name, $attributes, [], selfClosing: true, events: $events);
         }
 
         if ($this->peek() === '>') {
             $this->pos++;
 
             if (!TagNode::isComponentName($name) && in_array(strtolower($name), self::VOID_ELEMENTS, true)) {
-                return new TagNode($name, $attributes, [], selfClosing: true);
+                return new TagNode($name, $attributes, [], selfClosing: true, events: $events);
             }
 
-            return new TagNode($name, $attributes, $this->parseNodes($name));
+            return new TagNode($name, $attributes, $this->parseNodes($name), events: $events);
         }
 
         throw ParseException::malformedTag($name, $start);
     }
 
     /**
-     * @return array<string, string|ExpressionNode>
+     * @return array{0: array<string, string|ExpressionNode>, 1: array<string, string>}
      */
     private function parseAttributes(): array
     {
         $attributes = [];
+        $events = [];
 
         while (true) {
             $this->skipWhitespace();
@@ -140,6 +146,26 @@ final class Parser
 
             if ($char === null || $char === '/' || $char === '>') {
                 break;
+            }
+
+            if ($char === '(') {
+                $eventName = $this->parseEventBindingName();
+                $this->skipWhitespace();
+
+                if ($this->peek() !== '=') {
+                    throw ParseException::expectedEventBindingValue($eventName, $this->pos);
+                }
+
+                $this->pos++;
+                $this->skipWhitespace();
+                $value = $this->parseAttributeValue();
+
+                if ($value instanceof ExpressionNode) {
+                    throw ParseException::eventBindingValueMustBeAMethodName($eventName, $this->pos);
+                }
+
+                $events[$eventName] = $value;
+                continue;
             }
 
             $name = $this->consumeAttributeName();
@@ -159,7 +185,26 @@ final class Parser
             }
         }
 
-        return $attributes;
+        return [$attributes, $events];
+    }
+
+    /**
+     * Parses `(eventName)` — e.g. the `(click)` in `(click)="increment"` —
+     * returning just the bare event name.
+     */
+    private function parseEventBindingName(): string
+    {
+        $start = $this->pos;
+        $this->pos++; // consume '('
+        $name = $this->consumeWhile('/^[a-zA-Z][a-zA-Z0-9]*/');
+
+        if ($name === '' || $this->peek() !== ')') {
+            throw ParseException::malformedEventBindingName($start);
+        }
+
+        $this->pos++; // consume ')'
+
+        return $name;
     }
 
     private function parseAttributeValue(): string|ExpressionNode

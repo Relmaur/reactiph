@@ -148,4 +148,67 @@ final class ParserTest extends TestCase
 
         (new Parser())->parse('{$name');
     }
+
+    public function testParsesAnEventBinding(): void
+    {
+        $nodes = (new Parser())->parse('<button (click)="increment">+</button>');
+
+        /** @var TagNode $tag */
+        $tag = $nodes[0];
+        self::assertSame(['click' => 'increment'], $tag->events);
+        self::assertSame([], $tag->attributes);
+    }
+
+    public function testParsesEventBindingsAlongsideOrdinaryAttributes(): void
+    {
+        $nodes = (new Parser())->parse('<button type="button" (click)="increment" class="btn">+</button>');
+
+        /** @var TagNode $tag */
+        $tag = $nodes[0];
+        self::assertSame(['type' => 'button', 'class' => 'btn'], $tag->attributes);
+        self::assertSame(['click' => 'increment'], $tag->events);
+    }
+
+    public function testParsesMultipleEventBindingsOnOneTag(): void
+    {
+        $nodes = (new Parser())->parse('<input (focus)="onFocus" (blur)="onBlur" />');
+
+        /** @var TagNode $tag */
+        $tag = $nodes[0];
+        self::assertSame(['focus' => 'onFocus', 'blur' => 'onBlur'], $tag->events);
+    }
+
+    public function testTagWithoutEventBindingsHasAnEmptyEventsArray(): void
+    {
+        $nodes = (new Parser())->parse('<div></div>');
+
+        self::assertSame([], $nodes[0]->events);
+    }
+
+    public function testThrowsWhenEventBindingValueIsAnExpression(): void
+    {
+        try {
+            (new Parser())->parse('<button (click)="{$this->increment()}">+</button>');
+            self::fail('Expected a ParseException.');
+        } catch (ParseException $e) {
+            self::assertSame('template.event_binding_value_must_be_method_name', $e->code());
+        }
+    }
+
+    public function testThrowsWhenEventBindingIsOnAComponentTag(): void
+    {
+        try {
+            (new Parser())->parse('<LikeButton (click)="increment" />');
+            self::fail('Expected a ParseException.');
+        } catch (ParseException $e) {
+            self::assertSame('template.event_binding_on_component_tag', $e->code());
+        }
+    }
+
+    public function testThrowsOnMalformedEventBindingName(): void
+    {
+        $this->expectException(ParseException::class);
+
+        (new Parser())->parse('<button (click="increment">+</button>');
+    }
 }

@@ -36,6 +36,13 @@ use Reactiph\Template\Node\TextNode;
  * component tag as the root) compiles the same as before but the id is
  * never emitted anywhere — setting `hydrationId` on such a component is
  * currently a silent no-op, not an error. See ADR 0010.
+ *
+ * An HTML tag's `(click)="method"` event bindings ({@see TagNode::$events})
+ * always compile to a real `data-reactiph-on-click="method"` attribute,
+ * regardless of whether the tag is the root — a client-side runtime
+ * delegates event listening from the hydration root and matches
+ * descendants by this attribute, rather than each bound element needing
+ * its own hydration id. See ADR 0016.
  */
 final class Compiler
 {
@@ -109,6 +116,14 @@ final class Compiler
                 ? $this->emitEscaped($value->expression, $bufferVar)
                 : $this->emitLiteral($value, $bufferVar);
             $code .= $this->emitLiteral('"', $bufferVar);
+        }
+
+        // A client-side hydration runtime delegates event listening from a
+        // component's hydration root, matching descendant elements by this
+        // real (inspectable, no separate manifest bookkeeping needed) DOM
+        // attribute — see docs/adr/0016-*.md.
+        foreach ($node->events as $event => $method) {
+            $code .= $this->emitLiteral(' data-reactiph-on-' . $event . '="' . $method . '"', $bufferVar);
         }
 
         if ($isRoot) {
