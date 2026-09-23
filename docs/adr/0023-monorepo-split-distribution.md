@@ -116,8 +116,31 @@ unnecessary exposure.
   access to two repos, living in this repo's Actions secrets — normal
   GitHub secret-rotation hygiene applies (revoke/reissue if ever
   suspected leaked), same as any other CI deploy credential.
-- **A consuming project's `composer.json`** (e.g. `taw-theme`) can now
-  replace its `path` repository entries for `wordpress-bridge`/`taw-bridge`
-  with `vcs` entries pointing at the two split repos plus a version
-  constraint — not done automatically by this ADR; updating `taw-theme`
-  itself is separate, follow-on work.
+- **Live-verified end to end, including adoption by the one real
+  consumer.** The split workflow itself: confirmed green via `gh run
+  watch`, and by reading each split repo's actual pushed
+  `composer.json` back via the GitHub API (real source, correct
+  `"name"` field, not just "the workflow didn't error"). Getting there
+  took three real, now-documented fixes (`docs/gotchas.md`): a brand-new
+  target repo has zero commits, which breaks the action's own
+  branch-creation logic; the `ACCESS_TOKEN` secret didn't actually exist
+  on a first check despite being reported as added; and a fine-grained
+  PAT can have the right repos selected with zero permissions actually
+  granted, which clones fine and only fails, with a real `403`, at the
+  final push. `taw-theme` (via `taw-85`) then swapped its three `path`
+  entries for `vcs` ones against `reactiph`/`reactiph-wordpress-bridge`/
+  `reactiph-taw-bridge`, ran `composer update --with-all-dependencies`
+  (resolved and installed cleanly — real downloaded directories, not
+  symlinks), and re-verified the live site end to end with zero behavior
+  differences from before the switch.
+- **`packages/wordpress-bridge/composer.json` and
+  `packages/taw-bridge/composer.json` still carry their own local `path`
+  repository entries** (pointing at `../..`, `../wordpress-bridge`,
+  paths that don't exist outside this monorepo) — these get copied
+  verbatim into the split repos by design, not stripped. Harmless: those
+  entries exist so each package's *own* `composer install`/`test` can
+  resolve `reactiph/reactiph` for local development inside this
+  monorepo, and Composer only ever reads a root project's own
+  `repositories` key, never a dependency's — confirmed in practice, not
+  just asserted, by `taw-theme`'s own successful install off the split
+  repos.

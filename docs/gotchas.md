@@ -392,3 +392,21 @@ repositories" before clicking Update on any subsequent edit, rather than
 trusting what the form shows on open — accidentally saving over it with
 "Public repositories" selected would silently downgrade the token to
 read-only.
+
+### A dependency's own leftover `path` repository entries are harmless once split, not something to strip
+
+`packages/wordpress-bridge/composer.json` and `packages/taw-bridge/composer.json`
+each declare a local `path` repository (`../..`, `../wordpress-bridge`)
+so the package can resolve `reactiph/reactiph` for its *own* local
+`composer install`/`test` inside this monorepo. The split workflow copies
+each package directory verbatim, so those entries end up in the split
+repos too, pointing at filesystem paths that don't exist there. This
+looked like something worth cleaning up before `taw-85` actually
+installed `taw-theme` off the split repos and confirmed it doesn't
+matter: Composer only ever reads the *root* project's own `repositories`
+key when resolving a dependency graph — a dependency's own `composer.json`
+`repositories` entries are never consulted by whatever requires it. Worth
+knowing before "fixing" this pre-emptively in a similar split-distribution
+setup elsewhere — verify it's actually broken (it likely isn't) before
+spending effort stripping dev-only repository entries out of split
+package manifests.

@@ -82,11 +82,35 @@ package source, correct `"name"` fields (`reactiph/wordpress-bridge`,
 `reactiph/taw-bridge`), not just "the workflow didn't error." Documented
 in `docs/gotchas.md`.
 
-**Still separate, still-undone follow-up**: update `taw-theme`'s own
-`composer.json` to replace its `path` repository entries for
-`reactiph`/`wordpress-bridge`/`taw-bridge` with `vcs` entries against the
-real repos — the actual point of building this, not done yet since it's
-a change to a different repo. Handed to `taw-85` next.
+**`taw-theme` itself switched over and re-verified, via `taw-85`.** Its
+`composer.json`'s three `path` entries replaced with `vcs` entries against
+`reactiph`/`reactiph-wordpress-bridge`/`reactiph-taw-bridge`, same
+`minimum-stability: dev` kept (still needed — see "no real semver tags"
+below). `composer update --with-all-dependencies` resolved and installed
+cleanly from the three new GitHub repos (`vendor/reactiph/*` confirmed as
+real installed directories, not symlinks — composer's own output said
+"Downloading/Extracting," not "Symlinking from," which is what a `path`
+repo install prints). Full re-verification against the live site after
+the swap, everything still passing: `BlockRegistry` resolution, SSR/
+hydration/asset routes, Counter's click-to-increment (3→4), and
+`Guestbook`'s RPC round-trip (2→3, persisted across a reload) — a pure
+distribution-mechanism change, no behavior differences. Committed in
+`taw-theme` (`35f27c9`), not yet pushed.
+
+One thing `taw-85` flagged: `packages/wordpress-bridge/composer.json` and
+`packages/taw-bridge/composer.json` still carry their own local `path`
+repository entries (`../..`, `../wordpress-bridge`) pointing at
+filesystem paths that don't exist outside this monorepo, and those get
+copied verbatim into the split repos. **Intentional, not a bug** — those
+entries are what let each package's own `composer install`/`test` resolve
+`reactiph/reactiph` locally for development inside this monorepo, and
+Composer only ever reads a *root* project's `repositories` key, never a
+dependency's — confirmed correct by `taw-85`'s own installed-directory
+check. Worth knowing, not worth "fixing." See `docs/gotchas.md`.
+
+This closes the loop `taw-85` was originally asked to check — ADR 0023 is
+fully built, live-verified, and now actually adopted by its one real
+consumer.
 
 ## `reactiph/taw-bridge` (ADR 0021)
 
@@ -310,13 +334,6 @@ up" above and "Open threads" below instead.
   constraint. Tagging real releases would fix this and would also tag
   both split repos to match (the split workflow's tag-triggered step) —
   not done yet, separate follow-up from the split CI itself.
-- **`taw-theme`'s own `composer.json` still uses `path` repositories**
-  for `reactiph`/`wordpress-bridge`/`taw-bridge` — the split CI itself is
-  confirmed working (see "Current work"); updating `taw-theme` to use
-  `vcs` repositories against the now-live split repos (and the main
-  `reactiph` repo) instead is the actual point of ADR 0023, but is a
-  change to a different repo, not done as part of building the split CI
-  itself.
 - **`reactiph-wordpress-bridge`/`reactiph-taw-bridge` are CI-managed
   mirrors** (ADR 0023) — a change made directly in either split repo
   would be silently overwritten by the next split run. Both repos'
