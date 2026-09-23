@@ -7,8 +7,9 @@ history. See `CLAUDE.md` for the full build order and working agreement.
 
 ## Current work
 
-**`reactiph/taw-bridge` (ADR 0021) — built and tested against the real
-`taw/core`, live verification deferred.** Not one of the original 8
+**`reactiph/taw-bridge` (ADR 0021) — built, tested against the real
+`taw/core`, and now live-verified end to end against a real TAW site.**
+Not one of the original 8
 build-order parts, and not an extension of `wordpress-bridge` — the user
 explicitly rejected the shortcode as their real integration point and
 asked to rethink WordPress support as a TAW-specific one instead,
@@ -61,23 +62,75 @@ from docs) and confirmed before building.
   the deferred live check.
 - 7 new tests (`packages/taw-bridge`). PHPStan (level 8) and PHP-CS-Fixer
   clean across all three packages (core, `wordpress-bridge`, `taw-bridge`).
-- Not yet committed as of this status update.
+- Committed and pushed (`96342c9`, `103ef37`).
+- **Two real bugs caught by the `reactiph-docs` peer session while writing
+  up ADR 0021, both fixed and pushed (`189ed7a`)**: `ReactiveMetaBlock`
+  had silently dropped `MetaBlock::render()`'s visual-editor wrapper
+  (`data-taw-block-section`), and `packages/taw-bridge/composer.json`'s
+  description still claimed a `BridgeInterface` implementation that ADR
+  0021 explicitly decided against. See `docs/gotchas.md`.
+- **Live-verified end to end against a real TAW site**, via a peer
+  session (`taw-85`) working directly in the TAW repo — see "Live
+  verification results" below.
+
+## Live verification results (2026-09-23)
+
+`reactiph/taw-bridge` verified against a real, running TAW Local site by
+`taw-85`. Full success — no bugs found in the runtime/transpiler/hydration
+mechanics themselves; only the one wiring gap already flagged below.
+
+- `composer require reactiph/taw-bridge` into a real `taw-theme` via path
+  repositories worked, needing `--with-all-dependencies` (taw/core pins
+  `nikic/php-parser` to `5.8.0`; taw-bridge needs `^5.9`) and
+  `"minimum-stability": "dev"` on the theme's own root `composer.json`,
+  since `reactiph/reactiph` only exists as `dev-main` for now.
+- `examples/taw-block/Counter/` copied into `Blocks/Counter/` verbatim,
+  zero changes needed. `BlockLoader` auto-discovered it with zero
+  `taw-core` changes (`BlockRegistry::get('reactiph-counter')` resolved
+  correctly).
+- View-source showed exactly the expected SSR markup
+  (`data-reactiph-id="reactiph-counter-53"`), the `#reactiph-hydration`
+  manifest, and the inline `window.ReactiphComponents[...]` assignment.
+- Both REST asset routes returned real 200s with correct bytes/content
+  type (`php-runtime.js`, `hydrate.js`).
+- A real browser (Playwright): clicking Increment patched the DOM twice,
+  3 → 4 → 5, entirely client-side (no RPC round-trip needed for this
+  component), no console errors.
+- **One real gap, exactly as flagged in advance**: nothing wires
+  `WordPressBridge::registerRoutes()` to `rest_api_init` — this package
+  deliberately leaves that to the host (see `examples/taw-block/Counter/README.md`).
+  `taw-85` added it theme-side; worth noting their specific theme's own
+  convention put it in `inc/customizations.php`, not `functions.php`
+  (that theme treats `functions.php` as framework-owned and
+  blindly-overwritten) — a reminder that "wherever it boots" genuinely
+  varies per theme, not just a hedge phrase.
+- **Not exercised by this check**: an actual RPC round-trip against a
+  live WordPress/TAW REST endpoint. `Counter::increment()` is entirely
+  client-transpiled state, so this check never POSTed to
+  `/wp-json/reactiph/v1/rpc` for real. `RpcHandler`'s live behavior behind
+  a real `wp_rest` nonce is still only unit/integration-tested, not
+  browser-verified against a component that genuinely needs a server
+  round-trip (mirroring Part 6's `Guestbook` demo). Worth closing out
+  alongside Part 7's own still-open live check below, since both need the
+  same kind of component.
+- Left in place on the TAW site (nothing committed/pushed there, nothing
+  touched in this repo): the theme's path-repo `composer.json`/`lock`
+  changes, `Blocks/Counter/`, the `rest_api_init` hook in
+  `inc/customizations.php`, a new `page-reactiph-test.php` template, and
+  a published test page. Cleanup/keep is the user's call on the TAW side.
 
 ## Next up
 
-Three threads are live and unstarted, none with a user go-ahead yet for
+Two threads are live and unstarted, none with a user go-ahead yet for
 which to pick up:
 
-1. **Live verification against a real WordPress site** — Part 7's
-   original ask, still pending. Local by Flywheel's TAW site app wasn't
-   running last checked.
-2. **Live verification of `ReactiveMetaBlock` against that same TAW
-   site** — new from this work, naturally paired with (1) since it's the
-   same Local site: copy `examples/taw-block/Counter/` into the site's
-   active theme's `Blocks/` directory, confirm `BlockLoader` picks it up
-   with no code changes, and confirm click-to-increment patches the DOM
-   the same way Parts 5/6/7's demos already proved.
-3. **Part 8 — CLI/dev tooling + docs.** Docs half now covered by the
+1. **A live RPC round-trip against a real WordPress/TAW site** — narrower
+   than the original Part 7 ask now that the SSR/hydration/asset-serving
+   mechanics are proven live (above); what's left specifically is a
+   component whose method needs real server state (like Part 6's
+   `Guestbook`) exercised through a real `wp_rest`-nonce-gated REST call,
+   not just a client-transpiled one like `Counter`.
+2. **Part 8 — CLI/dev tooling + docs.** Docs half now covered by the
    separate `reactiph-docs` site. The CLI itself doesn't exist yet — and
    is also where a real fix for the "dynamic component JS vs. Vite's
    static pipeline" mismatch would naturally live.
@@ -109,8 +162,11 @@ which to pick up:
 - **`RpcHandler` (core) has no authentication of its own** (ADR 0018) —
   resolved for WordPress/TAW specifically (a `wp_rest` nonce), not for
   `DefaultBridge`/a plain PHP app.
-- **Live verification hasn't happened for either WordPress integration**
-  (ADR 0019, ADR 0021) — see "Next up".
+- **Live verification of ADR 0021 (TAW) is done** — see "Live verification
+  results" above. That check also transitively proves ADR 0019's
+  `WordPressBridge` asset/SSR/hydration mechanics against a real WordPress
+  site (a TAW site is a real WordPress site), but not an actual RPC
+  round-trip — see "Next up".
 - A Gutenberg block is still unbuilt (ADR 0004/0019).
 - `ComponentDiscovery::registerDirectory()` is an uncached, per-request
   filesystem scan (ADR 0020).

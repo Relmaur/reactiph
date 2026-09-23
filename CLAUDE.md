@@ -209,8 +209,14 @@ section is the short version.
   pitfall was hit and documented: every `taw/core` file guards with
   `if (!defined('ABSPATH')) { exit; }`, and merely autoloading one without
   `ABSPATH` defined first presented as an indefinite hang, not a clean
-  failure (`docs/gotchas.md`). Live verification against a real TAW site
-  is deferred, alongside Part 7's still-pending WordPress check. (ADR 0021)
+  failure (`docs/gotchas.md`). **Live-verified end to end against a real
+  TAW site** (2026-09-23): `BlockLoader` auto-discovery, SSR markup,
+  hydration, both REST asset routes, and real-browser click-to-increment
+  DOM patching all confirmed with no runtime bugs — only the one
+  `registerRoutes()`-wiring gap already predicted below, resolved
+  theme-side. An actual RPC round-trip against a live site is still
+  unverified (the demo component never needs one); see `docs/STATUS.md`.
+  (ADR 0021)
 
 ## Build order
 

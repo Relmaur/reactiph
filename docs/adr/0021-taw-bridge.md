@@ -124,17 +124,17 @@ re-emit its `window.ReactiphComponents[X] = {...}` assignment redundantly.
   parent. A real VCS or Packagist reference is needed before this package
   could be installed by anyone else, same caveat `taw-theme`'s own
   quickstart already carries for its own VCS-repository installation.
-- **A second live-verification debt, alongside Part 7's.** Everything
-  here is proven against the real `taw/core` *classes* (genuine
-  inheritance, genuine method signatures) but hand-rolled WordPress
-  *function* stubs — not a real running WordPress + TAW site. Live
-  verification (does `BlockLoader` really auto-discover
-  `examples/taw-block/Counter/` when copied into a real theme's `Blocks/`
-  directory; does a real click really patch the DOM the same way Part
-  5/6/7's demos already proved) is deliberately deferred, tracked
-  alongside the still-pending Part 7 WordPress check in `docs/STATUS.md`
-  — both could reasonably happen in the same session against the same
-  Local by Flywheel TAW site.
+- **Live-verified (2026-09-23)** against a real, running TAW Local site —
+  see `docs/STATUS.md`'s "Live verification results". `BlockLoader`
+  auto-discovered `examples/taw-block/Counter/` with zero `taw-core`
+  changes, both REST asset routes served real 200s, and a real browser
+  click patched the DOM 3 → 4 → 5 with no console errors. One gap
+  surfaced exactly as predicted below (`registerRoutes()` needing
+  explicit host wiring) and was resolved theme-side, not in this package.
+  Not exercised: an actual RPC round-trip against the live site, since
+  `Counter::increment()` is entirely client-transpiled — still open,
+  tracked in `docs/STATUS.md`'s "Next up" alongside the narrower remainder
+  of Part 7's own live check.
 - Component JS payload de-duplication is now implemented independently,
   near-identically, in two places (`ReactiphShortcode` in
   `wordpress-bridge`, `ReactiveMetaBlock` here) — small enough that
