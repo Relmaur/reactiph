@@ -169,9 +169,17 @@ section is the short version.
   is the Part 7 baseline integration point — a Gutenberg block is still
   unbuilt. Tested against hand-rolled WP function stubs
   (`tests/bootstrap.php`, also PHPStan's `scanFiles` source), not a real
-  WP install — **live verification against a real WordPress site is
-  deliberately deferred**, not done; `examples/wordpress-plugin/` is the
-  ready-to-activate artifact for when that happens. (ADR 0019)
+  WP install originally — **now live-verified against a real WordPress/TAW
+  site** (2026-09-23, via `taw-85`), including a genuine RPC round-trip:
+  `examples/wordpress-plugin/reactiph-demo.php` gained a `Guestbook`
+  component (`sign()` does a real `get_option`/`update_option` read-write,
+  outside the transpiler's subset, mirroring Part 6's own `Guestbook`) and
+  a `[reactiph_guestbook]` shortcode; clicking Sign produced a real
+  nonce-gated `POST /wp-json/reactiph/v1/rpc`, and the incremented count
+  persisted across a page reload, proving server-side state genuinely
+  round-tripped rather than living in client JS. See `docs/STATUS.md` for
+  the full result and one investigated-but-unconfirmed anomaly
+  (`docs/gotchas.md`). (ADR 0019)
 - **Folder-based components** are optional sugar on top of the existing
   model, not a replacement — `BaseComponent::template()` is no longer
   abstract; a component that doesn't override it loads its markup from a
@@ -214,9 +222,10 @@ section is the short version.
   hydration, both REST asset routes, and real-browser click-to-increment
   DOM patching all confirmed with no runtime bugs — only the one
   `registerRoutes()`-wiring gap already predicted below, resolved
-  theme-side. An actual RPC round-trip against a live site is still
-  unverified (the demo component never needs one); see `docs/STATUS.md`.
-  (ADR 0021)
+  theme-side. `Counter` itself never exercises RPC (entirely
+  client-transpiled) — a separate `Guestbook` demo
+  (`examples/wordpress-plugin/reactiph-demo.php`) closed that out with its
+  own live check; see `docs/STATUS.md`. (ADR 0021)
 - **`bin/reactiph`** — the real CLI, three subcommands: `compile
   <ComponentClass>` (transpile one component, print its JS — a fast
   single-component check and a CI-friendly way to catch a real

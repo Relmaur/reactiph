@@ -34,10 +34,10 @@ confirmed back.
 still-open verification thread below, plus the "Open threads" list, which
 are refinements/extensions rather than unbuilt parts.
 
-**A `Guestbook` RPC-round-trip demo for WordPress/TAW is now built**
-(`examples/wordpress-plugin/reactiph-demo.php`), picking up the "Next up"
-item below — see that section for what it proves and what's still
-pending (a live check, handed off to `taw-85`).
+**A `Guestbook` RPC-round-trip demo for WordPress/TAW is built and
+live-verified** (`examples/wordpress-plugin/reactiph-demo.php`) — see
+"Live verification results" below. This closes out the last open
+verification debt; nothing is currently pending a live check.
 
 ## `reactiph/taw-bridge` (ADR 0021)
 
@@ -137,53 +137,66 @@ mechanics themselves; only the one wiring gap already flagged below.
   (that theme treats `functions.php` as framework-owned and
   blindly-overwritten) — a reminder that "wherever it boots" genuinely
   varies per theme, not just a hedge phrase.
-- **Not exercised by this check**: an actual RPC round-trip against a
-  live WordPress/TAW REST endpoint. `Counter::increment()` is entirely
-  client-transpiled state, so this check never POSTed to
-  `/wp-json/reactiph/v1/rpc` for real. `RpcHandler`'s live behavior behind
-  a real `wp_rest` nonce is still only unit/integration-tested, not
-  browser-verified against a component that genuinely needs a server
-  round-trip (mirroring Part 6's `Guestbook` demo). Worth closing out
-  alongside Part 7's own still-open live check below, since both need the
-  same kind of component.
+- **RPC round-trip — live-verified separately (2026-09-23)**, see the
+  `Guestbook` section immediately below. This check didn't exercise it
+  (`Counter::increment()` is entirely client-transpiled), which is why a
+  second, dedicated check was built and run.
 - Left in place on the TAW site (nothing committed/pushed there, nothing
   touched in this repo): the theme's path-repo `composer.json`/`lock`
   changes, `Blocks/Counter/`, the `rest_api_init` hook in
   `inc/customizations.php`, a new `page-reactiph-test.php` template, and
   a published test page. Cleanup/keep is the user's call on the TAW side.
 
+### `Guestbook` RPC round-trip — live-verified (2026-09-23)
+
+`examples/wordpress-plugin/reactiph-demo.php`'s `Guestbook` component +
+`[reactiph_guestbook]` shortcode (mirroring Part 6's `Guestbook` exactly:
+`sign()` does a WordPress options-table read/write, work outside the
+transpiler's allow-listed subset, rendered SSR-only and never passed to
+`ComponentTranspiler`) verified end to end by `taw-85` against the same
+live TAW site, pasted into `inc/reactiph-guestbook.php` and required from
+`inc/customizations.php` rather than activating the standalone plugin.
+
+- Confirmed via `curl` before ever opening a browser: SSR-only, no
+  transpiled JS anywhere in the page source for this component.
+- Click Sign: a real `POST /wp-json/reactiph/v1/rpc` with an `X-WP-Nonce`
+  header, 200, `{"state":{"signatureCount":1}}`, DOM updates. Second
+  click: 1 → 2, response matches.
+- **Reloaded the page**: SSR still showed "Signatures so far: 2" —
+  `get_option`/`update_option` genuinely persisted server-side across a
+  fresh request, not just client-side JS state.
+- Zero console errors/warnings, zero 400/403s from the nonce check, at
+  any point.
+- **One anomaly encountered and run to ground, not a reactiph/wordpress-bridge bug**:
+  a first attempt went 0 → 2 on a single click with only one network POST
+  visible in the browser tool's own log. `taw-85` didn't take that at face
+  value — isolated `Guestbook::sign()` via `wp eval` (correct, +1), the
+  real REST route via `wp eval-file` + `rest_do_request()` (correct, +1),
+  confirmed no duplicate `rest_api_init` registration, then reset the
+  option and re-ran cleanly (correct: 0→1, 1→2, persisted after reload).
+  Most likely explanation offered: a second, already-running Chrome
+  instance under the shared browser-automation profile that couldn't be
+  attached to for this site — possibly a concurrent hit against the same
+  option. Recorded as an unresolved, unreproduced anomaly with a plausible
+  but unconfirmed explanation, not a defect — see `docs/gotchas.md`.
+- State left in place on the TAW site: `inc/reactiph-guestbook.php` (new),
+  `inc/customizations.php` (require + shortcode registration added),
+  `page-reactiph-test.php` (a `do_shortcode()` call added — this theme's
+  pages are block-driven with no `the_content()` template to drop a
+  shortcode into normally). `reactiph_guestbook_count` option is at `2` on
+  the live site.
+
+**This closes out every currently-open live-verification thread** — SSR,
+hydration, asset-serving, client-side DOM patching, and now a genuine RPC
+round-trip have all been proven against a real WordPress/TAW site.
+
 ## Next up
 
-**A live RPC round-trip against a real WordPress/TAW site** — narrower
-than the original Part 7 ask now that the SSR/hydration/asset-serving
-mechanics are proven live (above). Built, not yet live-verified:
-
-- `examples/wordpress-plugin/reactiph-demo.php` gained a `Guestbook`
-  component and a `[reactiph_guestbook]` shortcode, mirroring
-  `examples/bridge-server.php`'s own `Guestbook` exactly (Part 6):
-  `sign()` reads/writes a WordPress option (`get_option`/`update_option`,
-  the idiomatic WP persistence mechanism — Part 6's version used raw file
-  I/O against `DefaultBridge` for the same underlying reason), work
-  outside the transpiler's allow-listed subset. Rendered SSR-only, never
-  passed to `ComponentTranspiler` (`ReactiphShortcode` always transpiles
-  whatever it renders, so this needed its own small shortcode function
-  rather than reusing `ReactiphShortcode`); its button is wired by hand
-  in inline JS that `fetch()`s `WordPressBridge`'s RPC endpoint directly
-  with an `X-WP-Nonce` header (`RpcHandler`'s dispatch itself needed zero
-  changes).
-- Sanity-checked in-process (`RpcHandler::handle()` against the real
-  `Guestbook::sign()`, with `get_option`/`update_option` stubbed):
-  successive calls correctly return `signatureCount` 1, then 2 — real
-  dispatch, real state accumulation, not just "it doesn't throw."
-- **Not yet live-verified against a real site.** Handed off to `taw-85`
-  (same peer session that verified ADR 0021), since they already have a
-  running WordPress + TAW site with `WordPressBridge::registerRoutes()`
-  wired and `reactiph/wordpress-bridge` on the theme's own Composer
-  autoloader — the `Guestbook` class + shortcode function can be pasted
-  directly into the theme's `inc/customizations.php` (reusing what's
-  already there) instead of requiring a whole separate plugin activation,
-  though `examples/wordpress-plugin/` remains available as a standalone
-  plugin too if that's preferred.
+Nothing is currently pending a user go-ahead. All originally-planned work
+(the 8 build-order parts, plus the TAW-bridge rethink and the RPC-round-trip
+follow-up) is built and live-verified. Remaining work is entirely the
+"Open threads" list below — extensions and refinements, not unfinished
+builds.
 
 ## Remaining parts (unstarted)
 
@@ -213,11 +226,10 @@ up" above and "Open threads" below instead.
 - **`RpcHandler` (core) has no authentication of its own** (ADR 0018) —
   resolved for WordPress/TAW specifically (a `wp_rest` nonce), not for
   `DefaultBridge`/a plain PHP app.
-- **Live verification of ADR 0021 (TAW) is done** — see "Live verification
-  results" above. That check also transitively proves ADR 0019's
-  `WordPressBridge` asset/SSR/hydration mechanics against a real WordPress
-  site (a TAW site is a real WordPress site), but not an actual RPC
-  round-trip — see "Next up".
+- **Live verification of ADR 0021 (TAW), ADR 0019 (WordPress asset/SSR/
+  hydration), and a real RPC round-trip are all done** — see "Live
+  verification results" above. No live-verification thread is currently
+  open.
 - A Gutenberg block is still unbuilt (ADR 0004/0019).
 - `ComponentDiscovery::registerDirectory()` is an uncached, per-request
   filesystem scan (ADR 0020) — `bin/reactiph build` (ADR 0022) can produce

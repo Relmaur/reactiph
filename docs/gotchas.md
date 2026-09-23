@@ -310,3 +310,32 @@ sets the new mtime to `$originalMtime + 1` rather than calling bare
 `touch()` and hoping enough real time elapsed, to make the test
 deterministic instead of occasionally flaky depending on how fast the
 test runner happens to execute.
+
+## `reactiph/wordpress-bridge` — Guestbook RPC live check
+
+### One anomalous double-increment, isolated but not conclusively explained — not confirmed as a reactiph bug
+
+Live-verifying the `Guestbook` RPC demo (`examples/wordpress-plugin/reactiph-demo.php`)
+against a real TAW site, `taw-85` saw one run where a single button click
+went `0 → 2` (the option jumped by two) with only one network request
+visible in the browser automation tool's own log. Rather than either
+dismissing it or writing it up as a confirmed bug, three things were
+checked in isolation before concluding anything: `Guestbook::sign()`
+called directly via `wp eval` (correct: `+1`), the real registered REST
+route driven via `wp eval-file` + `rest_do_request()` (correct: `+1`), and
+a check for a duplicate `rest_api_init` registration (none found). A
+clean re-run afterward (option reset, fresh page load, click once, click
+again, reload) produced the fully correct `0 → 1 → 2`, persisted after
+reload. `RpcHandler`, `Guestbook::sign()`, and the REST route registration
+were each independently verified correct.
+
+**Not established**: what caused the one anomalous run. The offered
+explanation — a second, already-running Chrome instance under the shared
+browser-automation profile that couldn't be attached to for this site,
+possibly hitting the same WordPress option concurrently — is plausible
+but unconfirmed; nothing pinned it down further, and it wasn't
+reproduced. Recorded here as an open anomaly with a *candidate* cause,
+not a verified one — if this pattern (an action appearing to apply twice
+from one real user interaction) ever recurs, check for a second
+automation session hitting the same target before assuming it's a real
+double-submission or idempotency bug in `RpcHandler`/`Guestbook`.
