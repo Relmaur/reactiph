@@ -90,6 +90,7 @@ final class ParserTest extends TestCase
         self::assertInstanceOf(TagNode::class, $nodes[0]);
         self::assertSame('hr', $nodes[0]->name);
         self::assertSame([], $nodes[0]->children);
+        self::assertTrue($nodes[0]->selfClosing);
     }
 
     public function testTreatsKnownVoidElementsAsSelfClosingWithoutSlash(): void
@@ -99,8 +100,18 @@ final class ParserTest extends TestCase
         self::assertInstanceOf(TagNode::class, $nodes[0]);
         self::assertSame('img', $nodes[0]->name);
         self::assertSame([], $nodes[0]->children);
+        self::assertTrue($nodes[0]->selfClosing);
         self::assertInstanceOf(TextNode::class, $nodes[1]);
         self::assertSame('after', $nodes[1]->text);
+    }
+
+    public function testExplicitlyEmptyTagIsNotMarkedSelfClosing(): void
+    {
+        $nodes = (new Parser())->parse('<div></div>');
+
+        self::assertInstanceOf(TagNode::class, $nodes[0]);
+        self::assertSame([], $nodes[0]->children);
+        self::assertFalse($nodes[0]->selfClosing);
     }
 
     public function testBooleanAttributeWithoutValue(): void

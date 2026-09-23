@@ -58,3 +58,33 @@ because PHPUnit's code-coverage driver depends on it transitively. Don't
 mistake that for Reactiph having a direct dependency on it yet — Part 4
 (ADR 0002) needs to add it explicitly to `composer.json`'s `require`, not
 assume it's already a project dependency because it happens to be on disk.
+
+## Part 2 — Component tree
+
+### Void elements were still getting a closing tag emitted
+
+The original `Compiler::compileHtmlTag()` always emitted `<tag>...children...</tag>`,
+so a void element like `<img src="a.png">` (empty children, parsed without
+a matching `</img>`) rendered as `<img src="a.png"></img>` — invalid HTML.
+The bug: nothing in the AST distinguished "self-closing/void, no closing
+tag exists" from "a normal tag that just happens to have no children," e.g.
+`<div></div>`. Fixed by adding an explicit `TagNode::$selfClosing` bool set
+by the parser at the three points it produces a self-closed/void node,
+which the compiler checks before deciding whether to emit a closing tag.
+Caught by `ComponentTreeTest`'s end-to-end render, not a narrower unit
+test — worth remembering that AST-shape bugs like this often only surface
+once something exercises the full parse→compile→render path.
+
+### `CarriesDiagnostics` declares `abstract public function getMessage()` defensively, not because PHPStan requires it
+
+`CarriesDiagnostics::jsonSerialize()` calls `$this->getMessage()`, which
+the trait itself doesn't define — it's inherited from whatever SPL
+exception class (`\RuntimeException`, etc.) the using class extends.
+Verified empirically (temporarily removed the `abstract` declaration and
+re-ran `composer analyse`) that PHPStan (level 8) is actually fine either
+way here — it resolves `getMessage()` through the concrete classes that
+use the trait. Kept the `abstract` declaration anyway as documentation of
+the trait's implicit contract (it only works when the host class extends
+`\Throwable`), not as a fix for a real analysis failure. Don't assume this
+generalizes to every trait/host-method situation — re-verify rather than
+assume PHPStan needs (or doesn't need) an abstract declaration elsewhere.

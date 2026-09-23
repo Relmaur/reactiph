@@ -37,10 +37,7 @@ final class Parser
         $nodes = $this->parseNodes(null);
 
         if ($this->pos < $this->length) {
-            throw new ParseException(sprintf(
-                'Unexpected content at offset %d.',
-                $this->pos
-            ));
+            throw ParseException::unexpectedContent($this->pos);
         }
 
         return $nodes;
@@ -66,7 +63,7 @@ final class Parser
         }
 
         if ($closingTag !== null && !$foundClosingTag) {
-            throw new ParseException(sprintf('Missing closing tag for <%s>.', $closingTag));
+            throw ParseException::missingClosingTag($closingTag);
         }
 
         return $nodes;
@@ -84,15 +81,15 @@ final class Parser
         $this->skipWhitespace();
 
         if ($this->peek() !== '>') {
-            throw new ParseException(sprintf('Malformed closing tag near offset %d.', $save));
+            throw ParseException::malformedClosingTag($save);
         }
 
         if ($closingTag === null) {
-            throw new ParseException(sprintf('Unexpected closing tag </%s> with no matching open tag.', $name));
+            throw ParseException::unexpectedClosingTag($name);
         }
 
         if (strcasecmp($name, $closingTag) !== 0) {
-            throw new ParseException(sprintf('Mismatched closing tag: expected </%s>, found </%s>.', $closingTag, $name));
+            throw ParseException::mismatchedClosingTag($closingTag, $name);
         }
 
         $this->pos++; // consume '>'
@@ -106,7 +103,7 @@ final class Parser
         $name = $this->consumeTagName();
 
         if ($name === '') {
-            throw new ParseException(sprintf('Expected tag name at offset %d.', $start));
+            throw ParseException::expectedTagName($start);
         }
 
         $attributes = $this->parseAttributes();
@@ -114,20 +111,20 @@ final class Parser
 
         if ($this->lookingAt('/>')) {
             $this->pos += 2;
-            return new TagNode($name, $attributes, []);
+            return new TagNode($name, $attributes, [], selfClosing: true);
         }
 
         if ($this->peek() === '>') {
             $this->pos++;
 
-            if (in_array(strtolower($name), self::VOID_ELEMENTS, true)) {
-                return new TagNode($name, $attributes, []);
+            if (!TagNode::isComponentName($name) && in_array(strtolower($name), self::VOID_ELEMENTS, true)) {
+                return new TagNode($name, $attributes, [], selfClosing: true);
             }
 
             return new TagNode($name, $attributes, $this->parseNodes($name));
         }
 
-        throw new ParseException(sprintf('Malformed tag <%s at offset %d.', $name, $start));
+        throw ParseException::malformedTag($name, $start);
     }
 
     /**
@@ -148,7 +145,7 @@ final class Parser
             $name = $this->consumeAttributeName();
 
             if ($name === '') {
-                throw new ParseException(sprintf('Expected attribute name at offset %d.', $this->pos));
+                throw ParseException::expectedAttributeName($this->pos);
             }
 
             $this->skipWhitespace();
@@ -170,7 +167,7 @@ final class Parser
         $quote = $this->peek();
 
         if ($quote !== '"' && $quote !== "'") {
-            throw new ParseException(sprintf('Expected quoted attribute value at offset %d.', $this->pos));
+            throw ParseException::expectedQuotedAttributeValue($this->pos);
         }
 
         $this->pos++;
@@ -178,7 +175,7 @@ final class Parser
         $closing = strpos($this->source, $quote, $this->pos);
 
         if ($closing === false) {
-            throw new ParseException(sprintf('Unterminated attribute value starting at offset %d.', $start));
+            throw ParseException::unterminatedAttributeValue($start);
         }
 
         $value = substr($this->source, $start, $closing - $start);
@@ -232,7 +229,7 @@ final class Parser
             $this->pos++;
         }
 
-        throw new ParseException(sprintf('Unterminated expression starting at offset %d.', $start));
+        throw ParseException::unterminatedExpression($start);
     }
 
     private function consumeTagName(): string

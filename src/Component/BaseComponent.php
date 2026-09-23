@@ -23,6 +23,15 @@ abstract class BaseComponent
     private static array $rendererCache = [];
 
     /**
+     * Pre-rendered HTML of the content a parent template placed between a
+     * custom tag's open/close tags (e.g. `<LikeButton>Click me</LikeButton>`),
+     * available to this component's own template as `{$slot}`. Empty for a
+     * self-closing tag or a component rendered directly (not through a
+     * parent template).
+     */
+    public string $slot = '';
+
+    /**
      * The component's markup. See {@see Parser} for the supported syntax.
      */
     abstract public function template(): string;

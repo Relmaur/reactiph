@@ -63,6 +63,15 @@ section is the short version.
 - **Parity-test the transpiler** from day one of Part 4: the same PHP
   method run through real PHP and through transpiled-JS-in-Node must
   produce identical output. (ADR 0006)
+- **PascalCase tag names are components**, resolved at render time through
+  a static `ComponentRegistry`; a custom tag's children render in the
+  *parent's* scope into the child's `slot` property. (ADR 0008)
+- **Every exception implements `ReactiphException`**: a stable `code()`,
+  an optional `hint()`, structured `context()`, and JSON-serializable —
+  built only via named static constructors (e.g.
+  `ParseException::missingClosingTag(...)`), never `new Xyz($message)`.
+  This is a standing convention for every future part, not a one-time
+  deliverable. (ADR 0009)
 
 ## Build order
 
@@ -109,9 +118,16 @@ guarantees the referenced code hasn't since changed.
 
 When you hit something non-obvious (a bug whose fix wasn't where you'd
 expect, a footgun in a library, a design constraint that isn't visible from
-reading the code) add it to `docs/gotchas.md`. When you make or discover a
-real architectural decision — not "how I implemented this function," but
-"why the project does X instead of Y" — write an ADR in `docs/adr/`
-(`docs/adr/template.md` has the shape). Update `docs/STATUS.md` at the end
-of every part so the next session starts warm instead of re-deriving state
-from git log.
+reading the code) add it to `docs/gotchas.md` — but only claims you've
+actually verified; if you're not sure whether something is really the
+cause, check before writing it down (see the `CarriesDiagnostics` entry in
+that file for an example of a documented false lead). When you make or
+discover a real architectural decision — not "how I implemented this
+function," but "why the project does X instead of Y" — write an ADR in
+`docs/adr/` (`docs/adr/template.md` has the shape). Update
+`docs/STATUS.md` at the end of every part so the next session starts warm
+instead of re-deriving state from git log.
+
+Every new exception, in any part, implements `ReactiphException` (ADR
+0009) from the start — that convention exists precisely so it doesn't need
+rediscovering or retrofitting per part.
