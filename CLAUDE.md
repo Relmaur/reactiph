@@ -172,6 +172,21 @@ section is the short version.
   WP install — **live verification against a real WordPress site is
   deliberately deferred**, not done; `examples/wordpress-plugin/` is the
   ready-to-activate artifact for when that happens. (ADR 0019)
+- **Folder-based components** are optional sugar on top of the existing
+  model, not a replacement — `BaseComponent::template()` is no longer
+  abstract; a component that doesn't override it loads its markup from a
+  sibling `{ShortClassName}.reactiph.html` file instead, resolved via
+  reflection on the component's own class file (never the caller's working
+  directory). `Component\ComponentDiscovery::registerDirectory()`
+  auto-registers every component under a directory by its short class
+  name — it statically parses each `.php` file with `nikic/php-parser` to
+  learn its declared class **without including or evaluating it**, then
+  loads it through the ordinary Composer autoloader, so a discovered class
+  still has to resolve through normal PSR-4 rules. A request-time scan,
+  deliberately uncached for now (Part 8 follow-on). Styles are explicitly
+  out of scope — no asset pipeline exists yet to serve them. Deliberately
+  called "components," never "blocks," to avoid colliding with the
+  actual planned WordPress Gutenberg *block* integration. (ADR 0020)
 
 ## Build order
 
@@ -210,6 +225,7 @@ php examples/blog.php      # run Part 2's manual smoke test
 php examples/errors.php    # run the exception-foundation smoke test
 php examples/hydrate.php   # generate examples/hydrate-output.html (Parts 3 & 5) — open it in a browser
 php -S localhost:8080 examples/bridge-server.php   # Part 6 end-to-end Bridge demo — open http://localhost:8080/
+php examples/folder-components.php   # folder-based component discovery + sibling-file template demo (ADR 0020)
 ```
 
 `packages/wordpress-bridge/` and `examples/wordpress-plugin/` are their

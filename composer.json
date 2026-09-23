@@ -19,7 +19,8 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "Reactiph\\Tests\\": "tests/"
+            "Reactiph\\Tests\\": "tests/",
+            "ReactiphExamples\\": "examples/folder-based/"
         }
     },
     "scripts": {
