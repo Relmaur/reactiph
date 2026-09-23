@@ -38,6 +38,42 @@ final class ComponentTranspilerTest extends TestCase
         self::assertSame(5, $stateAfter['count']);
     }
 
+    public function testAssembledDefinitionIncludesAnExpressionsMapForEachTemplateInterpolation(): void
+    {
+        $js = (new ComponentTranspiler())->transpileComponent(CounterComponentFixture::class);
+
+        self::assertStringContainsString('expressions:', $js);
+        self::assertStringContainsString('0: function () { return __phpString(this.count); }', $js);
+    }
+
+    public function testExpressionThunkRecomputesAgainstMutatedStateInNode(): void
+    {
+        $js = (new ComponentTranspiler())->transpileComponent(CounterComponentFixture::class);
+
+        $value = NodeRunner::callRegisteredExpression($js, CounterComponentFixture::class, 0, ['count' => 4]);
+
+        self::assertSame('4', $value);
+    }
+
+    public function testExpressionThunkMatchesWhatSsrWouldRenderAfterAMethodRuns(): void
+    {
+        $component = new CounterComponentFixture();
+        $component->count = 4;
+        $component->increment();
+        $phpValue = (string) $component->count;
+
+        $js = (new ComponentTranspiler())->transpileComponent(CounterComponentFixture::class);
+        $stateAfter = NodeRunner::callRegisteredComponentMethod(
+            $js,
+            CounterComponentFixture::class,
+            'increment',
+            ['count' => 4],
+        );
+        $jsValue = NodeRunner::callRegisteredExpression($js, CounterComponentFixture::class, 0, $stateAfter);
+
+        self::assertSame($phpValue, $jsValue);
+    }
+
     public function testMatchesRealPhpAfterCallingIncrementTwice(): void
     {
         $component = new CounterComponentFixture();

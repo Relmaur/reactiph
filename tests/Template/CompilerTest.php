@@ -105,6 +105,60 @@ final class CompilerTest extends TestCase
         self::assertSame('<div class="card"><h2>Empty</h2><div class="card-body"></div></div>', $html);
     }
 
+    public function testTextExpressionsAreNotMarkedWhenHydrationIdIsUnset(): void
+    {
+        // Byte-identical to plain SSR output when a component is never
+        // hydrated -- markers exist purely to support DOM patching, so a
+        // never-hydrated render shouldn't pay for them. See ADR 0017.
+        $html = $this->render('<p>{$name}</p>', ['name' => 'World']);
+
+        self::assertSame('<p>World</p>', $html);
+    }
+
+    public function testTextExpressionsAreMarkedWhenHydrationIdIsSet(): void
+    {
+        $ast = (new Parser())->parse('<div><span>{$count}</span></div>');
+        $compiled = (new Compiler())->compile($ast);
+
+        $component = new #[\AllowDynamicProperties] class () extends BaseComponent {
+            public int $count = 3;
+
+            public function template(): string
+            {
+                return '';
+            }
+        };
+        $component->hydrationId = 'c1';
+
+        self::assertSame(
+            '<div data-reactiph-id="c1"><span><!--r0-->3<!--/r0--></span></div>',
+            $compiled->render->call($component, $component),
+        );
+        self::assertSame([0 => '$count'], $compiled->expressions);
+    }
+
+    public function testAttributeExpressionsAreNeverMarkedEvenWhenHydrationIdIsSet(): void
+    {
+        $ast = (new Parser())->parse('<a href="{$url}"></a>');
+        $compiled = (new Compiler())->compile($ast);
+
+        $component = new #[\AllowDynamicProperties] class () extends BaseComponent {
+            public string $url = '/x';
+
+            public function template(): string
+            {
+                return '';
+            }
+        };
+        $component->hydrationId = 'c1';
+
+        self::assertSame(
+            '<a href="/x" data-reactiph-id="c1"></a>',
+            $compiled->render->call($component, $component),
+        );
+        self::assertSame([], $compiled->expressions);
+    }
+
     public function testEventBindingCompilesToADataAttribute(): void
     {
         $html = $this->render('<button (click)="increment">+</button>', []);
@@ -115,7 +169,7 @@ final class CompilerTest extends TestCase
     public function testEventBindingCoexistsWithOrdinaryAttributesAndHydrationId(): void
     {
         $ast = (new Parser())->parse('<button type="button" (click)="increment">+</button>');
-        $renderer = (new Compiler())->compile($ast);
+        $compiled = (new Compiler())->compile($ast);
 
         $component = new class () extends BaseComponent {
             public function template(): string
@@ -127,7 +181,7 @@ final class CompilerTest extends TestCase
 
         self::assertSame(
             '<button type="button" data-reactiph-on-click="increment" data-reactiph-id="c1">+</button>',
-            $renderer->call($component, $component),
+            $compiled->render->call($component, $component),
         );
     }
 
@@ -137,7 +191,7 @@ final class CompilerTest extends TestCase
     private function render(string $template, array $props): string
     {
         $ast = (new Parser())->parse($template);
-        $renderer = (new Compiler())->compile($ast);
+        $compiled = (new Compiler())->compile($ast);
 
         $component = new #[\AllowDynamicProperties] class ($props) extends BaseComponent {
             public function __construct(array $props)
@@ -153,6 +207,6 @@ final class CompilerTest extends TestCase
             }
         };
 
-        return $renderer->call($component, $component);
+        return $compiled->render->call($component, $component);
     }
 }

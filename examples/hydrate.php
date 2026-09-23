@@ -3,20 +3,16 @@
 declare(strict_types=1);
 
 /**
- * Manual smoke test for Part 5 slice 1 (click bindings + real transpiled
- * method execution), building on Part 3's hydration payload wiring.
- * Generates a static HTML page -- server-rendered markup, an embedded
- * hydration manifest, and the Counter component's own increment()
- * method transpiled to real JS by ComponentTranspiler -- that a real
- * browser can load to prove clicking the button runs the ACTUAL
- * transpiled PHP method (not hand-written JS, unlike Part 3's stub) and
- * mutates state.
- *
- * This does NOT yet patch the DOM after that mutation -- see
- * docs/STATUS.md's "Next up" for why that's a deliberately separate,
- * not-yet-designed piece. Watch the browser console and the
- * data-reactiph-debug-state attribute the runtime writes to see the new
- * state after clicking. Run with:
+ * Manual smoke test for Part 5 (click bindings + real transpiled method
+ * execution + DOM patching, ADR 0016/0017), building on Part 3's hydration
+ * payload wiring. Generates a static HTML page -- server-rendered markup
+ * with comment-marked {$expr} spots, an embedded hydration manifest, and
+ * the Counter component's own increment() method and {$count} expression
+ * transpiled to real JS by ComponentTranspiler -- that a real browser can
+ * load to prove clicking the button runs the ACTUAL transpiled PHP method
+ * (not hand-written JS) and that the resulting state change is patched
+ * into the visible DOM, not just observable via console/debug-attribute.
+ * Run with:
  *   php examples/hydrate.php
  * then open examples/hydrate-output.html in a browser.
  */
@@ -61,13 +57,13 @@ $page = <<<HTML
 </head>
 <body>
     <p>Server-rendered count is 3. Click Increment: the REAL transpiled
-    <code>increment()</code> method runs client-side (open the devtools
-    console to see it log the new state, and inspect the
-    <code>data-reactiph-debug-state</code> attribute on the div below).
-    The visible DOM text doesn't update yet -- that's a deliberately
-    separate, not-yet-built piece.</p>
+    <code>increment()</code> method runs client-side and the visible count
+    below is patched to match (open the devtools console to see it log the
+    new state, and inspect the <code>data-reactiph-debug-state</code>
+    attribute on the div below).</p>
     {$ssrHtml}
     {$hydrationScript}
+    <script src="../packages/runtime-js/php-runtime.js"></script>
     <script>{$componentJs}</script>
     <script src="../packages/runtime-js/hydrate.js"></script>
 </body>

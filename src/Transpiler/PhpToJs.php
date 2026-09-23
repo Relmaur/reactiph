@@ -48,6 +48,56 @@ final class PhpToJs
     /** @var array<string, true> */
     private array $declaredLocals = [];
 
+    /**
+     * True while compiling a *template* expression (via
+     * {@see transpileExpression}), as opposed to a method body. A
+     * template's `{$expr}` is sugar for a component property — SSR's
+     * `extract(get_object_vars($component))` (see {@see \Reactiph\Template\Compiler})
+     * is what makes a bare `$count` mean the same thing as `$this->count`
+     * server-side, but nothing extracts anything client-side, so
+     * `compileVariable()` rewrites every bare (non-`$this`) variable to a
+     * `this.` property access only in this mode. Safe because the
+     * transpiler's allow-listed expression subset has no closures/arrow
+     * functions (ADR 0011) — there is no way for a *real* local variable
+     * to appear inside a template expression under that subset, so every
+     * bare variable reaching `compileVariable()` here is a property.
+     */
+    private bool $inTemplateExpression = false;
+
+    /**
+     * Transpiles a single standalone PHP expression (not a statement, not a
+     * method) to its JS equivalent — the same allow-list `compileExpr()`
+     * already enforces for expressions inside a method body. Used by
+     * {@see \Reactiph\Transpiler\ComponentTranspiler} to compile each
+     * template `{$expr}` marker's source for client-side DOM patching
+     * (ADR 0017), independent of `transpileMethod()`'s statement/local-
+     * variable machinery, which a bare expression has no need of.
+     */
+    public function transpileExpression(string $phpExprSource): string
+    {
+        $wrapped = '<?php (' . $phpExprSource . ');';
+
+        try {
+            $ast = (new ParserFactory())->createForHostVersion()->parse($wrapped);
+        } catch (\PhpParser\Error $e) {
+            throw TranspileException::phpSyntaxError($e->getMessage());
+        }
+
+        $stmt = $ast[0] ?? null;
+
+        if (!$stmt instanceof Stmt\Expression) {
+            throw TranspileException::expectedSingleExpression();
+        }
+
+        $this->inTemplateExpression = true;
+
+        try {
+            return $this->compileExpr($stmt->expr);
+        } finally {
+            $this->inTemplateExpression = false;
+        }
+    }
+
     public function transpileMethod(string $phpMethodSource): string
     {
         $this->declaredLocals = [];
@@ -292,7 +342,11 @@ final class PhpToJs
             throw TranspileException::unsupportedConstruct($expr);
         }
 
-        return $expr->name === 'this' ? 'this' : $expr->name;
+        if ($expr->name === 'this') {
+            return 'this';
+        }
+
+        return $this->inTemplateExpression ? 'this.' . $expr->name : $expr->name;
     }
 
     private function compilePropertyFetch(Expr\PropertyFetch $expr): string

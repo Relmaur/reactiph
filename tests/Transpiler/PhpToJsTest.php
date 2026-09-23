@@ -263,6 +263,50 @@ final class PhpToJsTest extends TestCase
         self::assertStringContainsString('__phpInArray(this.a, this.items)', $js);
     }
 
+    public function testTranspileExpressionCompilesArithmeticExactly(): void
+    {
+        $js = (new PhpToJs())->transpileExpression('$this->a + 1');
+
+        self::assertSame('(this.a + 1)', $js);
+    }
+
+    public function testTranspileExpressionRewritesABareVariableToAThisPropertyAccess(): void
+    {
+        // {$count} in a template is sugar for the extracted component
+        // property (see Template\Compiler's docblock) — there is no local
+        // `count` variable client-side, only `this`, so a bare variable
+        // must become a `this.` property access in this mode (unlike
+        // inside a transpiled method body, where a bare variable is a
+        // real local — see testHoistsLocalVariablesAssignedInsideABranchToTheTopOfTheFunction).
+        $js = (new PhpToJs())->transpileExpression('$count');
+
+        self::assertSame('this.count', $js);
+    }
+
+    public function testTranspileExpressionStillHandlesThisExplicitly(): void
+    {
+        $js = (new PhpToJs())->transpileExpression('$this->count');
+
+        self::assertSame('this.count', $js);
+    }
+
+    public function testTranspileExpressionDoesNotLeakTemplateModeIntoASubsequentMethodTranspile(): void
+    {
+        $phpToJs = new PhpToJs();
+        $phpToJs->transpileExpression('$count');
+
+        $js = $phpToJs->transpileMethod('public function get(): int { $count = 1; return $count; }');
+
+        self::assertStringContainsString('return count;', $js);
+    }
+
+    public function testTranspileExpressionRejectsASyntaxError(): void
+    {
+        $this->expectException(TranspileException::class);
+
+        (new PhpToJs())->transpileExpression('1 +');
+    }
+
     public function testUnsupportedConstructExceptionCarriesLineNumber(): void
     {
         try {

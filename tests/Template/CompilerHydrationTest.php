@@ -60,7 +60,7 @@ final class CompilerHydrationTest extends TestCase
     private function renderWithHydrationId(string $template, ?string $hydrationId): string
     {
         $ast = (new Parser())->parse($template);
-        $renderer = (new Compiler())->compile($ast);
+        $compiled = (new Compiler())->compile($ast);
 
         $component = new class () extends BaseComponent {
             public function template(): string
@@ -70,6 +70,6 @@ final class CompilerHydrationTest extends TestCase
         };
         $component->hydrationId = $hydrationId;
 
-        return $renderer->call($component, $component);
+        return $compiled->render->call($component, $component);
     }
 }

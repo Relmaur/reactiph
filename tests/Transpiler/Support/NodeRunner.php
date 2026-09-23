@@ -89,6 +89,41 @@ final class NodeRunner
         return $result;
     }
 
+    /**
+     * Calls one expression thunk registered by {@see \Reactiph\Transpiler\ComponentTranspiler}
+     * onto `window.ReactiphComponents[$componentClass].expressions[$index]`,
+     * with `this` bound to $context, and returns its (already
+     * `__phpString()`-stringified) result — for verifying a template
+     * `{$expr}` marker's client-side recomputation matches what SSR would
+     * have rendered for the same state.
+     *
+     * @param array<string, mixed> $context
+     */
+    public static function callRegisteredExpression(
+        string $definitionJs,
+        string $componentClass,
+        int $index,
+        array $context,
+    ): string {
+        $contextJson = json_encode($context, JSON_THROW_ON_ERROR);
+        $componentClassJson = json_encode($componentClass, JSON_THROW_ON_ERROR);
+
+        $script = 'globalThis.window = globalThis.window || globalThis;' . "\n"
+            . self::readRuntimeJs() . "\n"
+            . $definitionJs . "\n"
+            . "const __context = {$contextJson};\n"
+            . "const __result = window.ReactiphComponents[{$componentClassJson}].expressions[{$index}].call(__context);\n"
+            . "process.stdout.write(JSON.stringify(__result));\n";
+
+        $result = self::run($script, "expressions[{$index}]");
+
+        if (!is_string($result)) {
+            throw new \RuntimeException('Expected a string back from Node for expressions[' . $index . '], got: ' . get_debug_type($result));
+        }
+
+        return $result;
+    }
+
     private static function readRuntimeJs(): string
     {
         $runtimeJs = file_get_contents(dirname(__DIR__, 3) . '/packages/runtime-js/php-runtime.js');

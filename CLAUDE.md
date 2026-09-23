@@ -115,9 +115,22 @@ section is the short version.
   definition registered on `window.ReactiphComponents`, shared across
   every instance of that class on the page. Live-verified in a browser:
   clicking a bound button runs the *real* transpiled method and mutates
-  state correctly across repeated clicks — but does not yet patch the
-  visible DOM, which is a deliberately separate, not-yet-designed next
-  step. (ADR 0016)
+  state correctly across repeated clicks. (ADR 0016)
+- **After a bound method runs, the DOM is patched via SSR comment
+  markers** — not a second template→JS compiler, not a `Proxy`. Every
+  text-position `{$expr}` compiles to an `<!--rN--><!--/rN-->` marker pair
+  (emitted only when `hydrationId` is set, so a never-hydrated render pays
+  no byte cost) plus a recorded raw-PHP-source entry
+  (`Template\CompiledTemplate::$expressions`); `ComponentTranspiler`
+  transpiles each into a JS thunk (`window.ReactiphComponents[class].expressions`)
+  via a new `PhpToJs::transpileExpression()`. `hydrate.js` recomputes and
+  patches every marker for a component right after its bound method
+  returns — the same explicit checkpoint the delegated click listener
+  already has, not automatic write-detection. Scoped to text-node content
+  only (attribute and structural patching are unbuilt — no template
+  control-flow syntax exists yet to need the latter). Live-verified: a
+  bound button's visible count patches 3 → 4 → 5 across real clicks,
+  matching the transpiled method's real state. (ADR 0017)
 
 ## Build order
 

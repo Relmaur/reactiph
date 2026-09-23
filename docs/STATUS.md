@@ -7,68 +7,79 @@ history. See `CLAUDE.md` for the full build order and working agreement.
 
 ## Current part
 
-**Part 5 — Reactive client runtime: slice 1 done and verified (click
-bindings + real transpiled method execution). Paused before the DOM-patch
-design, per the same checkpoint discipline Part 4 used for arrays.**
+**Part 5 — Reactive client runtime: complete and verified.** Both
+click-to-real-transpiled-method-execution (slice 1) and DOM patching after
+a state change (slice 2) are built, tested, and live-verified in a
+browser.
 
-Told the user upfront this part has two separable concerns — wiring
-`(click)="method"` to real transpiled execution, and how a resulting
-state change reaches the DOM — and that the second is where "no full
-vdom needed" leaves genuine design space worth a checkpoint. Built the
-first as its own slice without asking further; this entry is that report.
+Before building slice 2, three real open design questions were surfaced to
+the user and discussed rather than picked unilaterally: how the runtime
+knows what to update, whether "reactive" means a `Proxy` or an explicit
+trigger, and how wide "minimal scoped patch" is. The user chose to discuss
+tradeoffs rather than take the first recommendation outright; all three
+were settled together (see ADR 0017) since the second and third follow
+from the first.
 
-- **Template syntax**: `Template\Parser` now recognizes `(eventName)="methodName"`
-  as a distinct attribute form (`TagNode::$events`) — value must be a bare
-  method name, not `{$expr}`; rejected on component tags (only makes
-  sense on a real DOM element).
-- **Compiles to a real DOM attribute**: `Template\Compiler` emits
-  `data-reactiph-on-click="increment"` directly — no hydration-manifest
-  changes needed, the binding is fully recoverable from the rendered DOM.
-- **`Transpiler\ComponentTranspiler`** (new): assembles a component
-  class's own declared methods (Reflection-based, excluding inherited/magic
-  ones) into one JS definition per *class* (not per instance), registered
-  on `window.ReactiphComponents`. Reuses `Transpiler\MethodSourceReader`
-  (promoted from test-only code — real framework code now, still also used
-  by the parity suite).
-- **`packages/runtime-js/hydrate.js`** (new, generic — replaces Part 3's
-  throwaway `hydrate-stub.js`, deleted): one delegated `click` listener
-  per hydration root, matching descendants via
-  `closest('[data-reactiph-on-click]')` bounded by `root.contains()`.
-  Builds each instance as `Object.assign({}, state, methods)` so
-  `this.otherMethod()` calls inside a transpiled method resolve correctly.
-- **Live-verified in an isolated headless browser**: clicked a bound
-  button twice on the regenerated `examples/hydrate.php` demo; confirmed
-  the *real* transpiled `increment()` mutated state 3 → 4 → 5 across the
-  two clicks (matching real PHP), while the visible DOM text correctly
-  stayed "3" — proof the method genuinely ran via the transpiled
-  pipeline, and honest confirmation the next piece (DOM patching) isn't
-  built yet.
-- 129 PHPUnit tests passing (Transpiler suite: 76). PHPStan (level 8) and
+- **DOM patching via SSR comment markers**, not a second template→JS
+  compiler and not a `Proxy`. `Template\Compiler` wraps every
+  text-position `{$expr}` in an `<!--rN--><!--/rN-->` marker pair —
+  emitted only when the rendering component's `hydrationId` is set, so a
+  plain SSR-only render is byte-identical to before this part (confirmed:
+  all 129 pre-existing tests passed unmodified). `Template\Compiler::compile()`
+  now returns `Template\CompiledTemplate` (a `render` closure plus an
+  ordered `expressions` array of raw PHP source, one per marker index)
+  instead of a bare `Closure`.
+- **`BaseComponent::compiledTemplateFor(class-string): CompiledTemplate`**
+  (new, public, static) — the compile-and-cache path `render()` already
+  had, now also reachable without an existing instance, so
+  `ComponentTranspiler` can read a class's expression list. This imposes
+  a new implicit constraint: every component class must be constructible
+  with no arguments (a cache-miss compile builds a throwaway instance
+  just to call `template()`).
+- **`PhpToJs::transpileExpression()`** (new, public) — transpiles one
+  standalone PHP expression via the existing (already expression-shaped,
+  already private) `compileExpr()`, independent of `transpileMethod()`'s
+  statement/local-variable machinery.
+- **Real bug caught and fixed**: a template `{$count}` and a method-body
+  `$count` mean different things to the transpiler — the former is sugar
+  for an SSR-extracted property, the latter a real local. Reusing
+  `compileExpr()` naively compiled `{$count}` to a bare, unbound `count`
+  identifier. Fixed with an `$inTemplateExpression` mode flag; documented
+  in `docs/gotchas.md` (Part 5 section) and ADR 0017.
+- **`ComponentTranspiler`** now assembles an `expressions` map alongside
+  `methods`, each entry a JS thunk wrapped in `__phpString()` to match
+  SSR's `(string)` cast exactly (same shim ADR 0014 introduced).
+- **`hydrate.js`** recomputes and patches every expression marker for a
+  component right after its bound method returns — the same synchronous
+  checkpoint the delegated click listener already had. The marker-finding
+  `TreeWalker` explicitly refuses to descend into a nested element with
+  its own `data-reactiph-id`, since marker indices are only unique per
+  component *class*, not page-wide.
+- `examples/hydrate.php` now also loads `packages/runtime-js/php-runtime.js`
+  (a real, previously-latent gap — the demo only worked without it because
+  `increment()` doesn't happen to call any runtime helper; expression
+  thunks now genuinely need `__phpString()`).
+- **Live-verified in an isolated headless browser**: clicked the bound
+  button twice on the regenerated demo; the visible `<span class="count">`
+  text patched 3 → 4 → 5 in step with the real transpiled `increment()`
+  mutating state, matching real PHP — and the marker comment pair survived
+  both patches intact.
+- 140 PHPUnit tests passing (11 new this slice). PHPStan (level 8) and
   PHP-CS-Fixer both clean.
 - Not yet committed as of this status update.
 
 ## Next up
 
-**Part 5 continued — reactive DOM update after a state change.** This is
-the piece flagged as needing its own checkpoint before design: currently,
-running a bound method mutates the client-side component instance but the
-DOM stays exactly as server-rendered. Real open questions, not yet
-decided:
-- How does the runtime *know* what to update — re-run a JS-transpiled
-  version of the whole template (a template→JS compiler mirroring
-  `Template\Compiler`, which doesn't exist yet), or mark individual
-  `{$expr}` interpolation points during SSR and only re-evaluate/patch
-  those specific spots?
-- Does "reactive" mean wrapping component state in a JS `Proxy` (per the
-  plan's own wording) to detect writes automatically, or is an explicit
-  "mark dirty and patch after the event handler returns" step (what
-  slice 1's `hydrate.js` already does structurally, minus the actual
-  patch) sufficient and simpler?
-- Scope of "minimal scoped DOM patch" (plan's phrase) — text-node-level
-  patching only, or also attributes, or also structural (conditional/
-  list) content? The current template subset has no conditionals or
-  loops in markup (see "Open threads"), which narrows what patching
-  actually needs to handle for now.
+**User go-ahead needed before starting Part 6** (Bridge abstraction +
+`DefaultBridge`), per the working agreement — Part 5 is done and reported,
+not a mid-part checkpoint this time.
+
+If/when Part 5 continues instead: attribute-value patching and structural
+(conditional/list) patching are the two explicitly-deferred extensions of
+this same mechanism (see ADR 0017's Consequences) — attribute patching is
+a plausible near-term follow-up; structural patching has no real caller
+until markup control-flow syntax exists at all (see "Open threads" below,
+unchanged since Part 2).
 
 ## Remaining parts (unstarted)
 
@@ -82,7 +93,8 @@ decided:
   similar) for dynamically rendering a variable-length list of children —
   the plan's Part 2 scope didn't call for it, so the Part 2 Blog example
   hardcodes a fixed number of `<Thumbnail />` tags rather than looping
-  over an array. Not designed yet.
+  over an array. Not designed yet. This also gates structural DOM patching
+  (ADR 0017) — there's nothing to patch structurally until this exists.
 - Only one, unnamed default slot exists per component (ADR 0008) — no
   named/multiple slots.
 - Setting `hydrationId` on a component whose template isn't a single
@@ -101,5 +113,10 @@ decided:
 - `ComponentTranspiler` transpiles every non-excluded method a component
   declares regardless of whether a template actually references it — no
   dead-code elimination (ADR 0016). Fine at current scale.
-- The DOM-update/reactivity mechanism itself — the main "Next up" item
-  above.
+- DOM patching is scoped to text-node content only — attribute-value and
+  structural patching are both explicitly deferred (ADR 0017).
+- Nested-component hydration (a component with its own `hydrationId`
+  rendered inside another hydrated component's subtree) has a defensive
+  boundary check in `hydrate.js`'s marker walker but no real example or
+  test exercises it yet — worth a dedicated check once Part 6/7 produces
+  a multi-component page.

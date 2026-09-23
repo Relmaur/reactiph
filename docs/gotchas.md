@@ -185,3 +185,27 @@ type narrowing across an `isset()` on a `const array` and will flag a
 `match`'s `default` as dead code once earlier control flow has already
 proven exhaustiveness — worth checking for this pattern specifically
 before assuming a "just in case" default arm is free insurance.
+
+## Part 5 — Reactive client runtime
+
+### A bare template variable (`{$count}`) and a bare method-body variable (`$count = 1;`) mean different things to the transpiler
+
+Reused `PhpToJs::compileExpr()`'s existing `compileVariable()` to transpile
+template `{$expr}` markers for DOM patching (ADR 0017), assuming it would
+just work since it's the same PHP expression syntax. It compiled `{$count}`
+to a bare `count` identifier — which throws/`undefined`s client-side,
+since the JS expression thunk has no local `count`, only `this` (bound via
+`.call(instance)`). The bug: `{$count}` in a template is sugar for
+`extract(get_object_vars($component))`'s extracted property (real, running
+PHP, server-side only) — but inside a transpiled *method body*, a bare
+`$count` genuinely is a local variable, and `compileVariable()` was built
+for that case first. Caught by actually running `php examples/hydrate.php`
+and reading the emitted JS by eye before trusting it (not by a failing
+test — none existed yet for this path), the same "verify empirically, on
+the actual boundary you're about to build on, not just where you'd
+normally look" habit `__phpString()` (ADR 0014) came from. Fixed with a
+mode flag (`$inTemplateExpression`) so `transpileExpression()` treats
+every bare non-`$this` variable as a `this.` property access, provably
+safe only because the transpiler's allow-listed subset (ADR 0011) has no
+closures/arrow functions, so a template expression can never actually
+contain a real local variable under that subset.

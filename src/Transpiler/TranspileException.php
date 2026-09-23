@@ -35,6 +35,18 @@ final class TranspileException extends \RuntimeException implements ReactiphExce
         );
     }
 
+    public static function expectedSingleExpression(): self
+    {
+        $e = new self('Expected exactly one expression.');
+
+        return $e->withDiagnostics(
+            'transpiler.expected_single_expression',
+            [],
+            'PhpToJs::transpileExpression() takes the source of exactly one expression '
+                . '(e.g. "$this->count + 1"), not a statement or multiple expressions.',
+        );
+    }
+
     public static function unsupportedConstruct(Node $node): self
     {
         $e = new self(sprintf('Unsupported PHP construct for transpilation: %s.', $node->getType()));

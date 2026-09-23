@@ -43,17 +43,32 @@ use Reactiph\Template\Node\TextNode;
  * delegates event listening from the hydration root and matches
  * descendants by this attribute, rather than each bound element needing
  * its own hydration id. See ADR 0016.
+ *
+ * Every text-position `{$expr}` (not an attribute-value expression — see
+ * {@see compileHtmlTag}) is additionally wrapped in an `<!--rN--><!--/rN-->`
+ * HTML comment marker pair, but only when the rendering component's
+ * `$hydrationId` is set — a plain SSR-only render pays no byte cost for
+ * markers it'll never use. `compile()`'s second return value is the
+ * PHP-expression source for each marker index, in the same order the
+ * markers appear, so a hydration client can recompute and patch each one
+ * after a state change without a template->JS compiler. See ADR 0017.
  */
 final class Compiler
 {
     private int $componentCounter = 0;
+    private int $expressionCounter = 0;
+
+    /** @var array<int, string> */
+    private array $expressions = [];
 
     /**
      * @param Node[] $nodes
      */
-    public function compile(array $nodes): \Closure
+    public function compile(array $nodes): CompiledTemplate
     {
         $this->componentCounter = 0;
+        $this->expressionCounter = 0;
+        $this->expressions = [];
 
         $source = 'return function (\\' . BaseComponent::class . ' $component): string {'
             . 'extract(get_object_vars($component));'
@@ -65,7 +80,7 @@ final class Compiler
         $closure = eval($source);
         assert($closure instanceof \Closure);
 
-        return $closure;
+        return new CompiledTemplate($closure, $this->expressions);
     }
 
     /**
@@ -98,12 +113,36 @@ final class Compiler
     {
         return match (true) {
             $node instanceof TextNode => $this->emitLiteral($node->text, $bufferVar),
-            $node instanceof ExpressionNode => $this->emitEscaped($node->expression, $bufferVar),
+            $node instanceof ExpressionNode => $this->compileTextExpression($node, $bufferVar),
             $node instanceof TagNode => TagNode::isComponentName($node->name)
                 ? $this->compileComponentTag($node, $bufferVar)
                 : $this->compileHtmlTag($node, $bufferVar),
             default => throw CompilerException::unknownNodeType($node::class),
         };
+    }
+
+    /**
+     * Wraps a text-position expression's output in a comment marker pair,
+     * emitted only when `$hydrationId` is set (in scope via `extract()` at
+     * the top of the compiled closure, for every nested tag, not just the
+     * root) — see this class's docblock and ADR 0017. Recorded into
+     * `$this->expressions` in emission order so `compile()`'s second
+     * return value stays a single source of truth for marker indices.
+     */
+    private function compileTextExpression(ExpressionNode $node, string $bufferVar): string
+    {
+        $index = $this->expressionCounter++;
+        $this->expressions[$index] = $node->expression;
+
+        $code = 'if (isset($hydrationId)) {' . "\n";
+        $code .= $this->emitLiteral('<!--r' . $index . '-->', $bufferVar);
+        $code .= '}' . "\n";
+        $code .= $this->emitEscaped($node->expression, $bufferVar);
+        $code .= 'if (isset($hydrationId)) {' . "\n";
+        $code .= $this->emitLiteral('<!--/r' . $index . '-->', $bufferVar);
+        $code .= '}' . "\n";
+
+        return $code;
     }
 
     private function compileHtmlTag(TagNode $node, string $bufferVar, bool $isRoot = false): string

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reactiph\Component;
 
+use Reactiph\Template\CompiledTemplate;
 use Reactiph\Template\Compiler;
 use Reactiph\Template\Parser;
 
@@ -12,15 +13,19 @@ use Reactiph\Template\Parser;
  * state and are available by name inside the template's `{$expr}`
  * interpolations (e.g. a public `$title` property is readable as `{$title}`).
  *
- * The compiled render closure is cached per component class (parsing +
- * compiling a template is comparatively expensive; evaluating the cached
- * closure per instance is cheap), so subclasses should return a constant
- * template string from `template()` rather than building it dynamically.
+ * The compiled template is cached per component class (parsing + compiling
+ * is comparatively expensive; evaluating the cached render closure per
+ * instance is cheap), so subclasses should return a constant template
+ * string from `template()` rather than building it dynamically — and must
+ * be constructible with no constructor arguments, since a cache-miss
+ * compile needs a throwaway instance to call `template()` on (see
+ * {@see compileTemplateFor}) independently of whatever instance eventually
+ * calls `render()`.
  */
 abstract class BaseComponent
 {
-    /** @var array<class-string, \Closure> */
-    private static array $rendererCache = [];
+    /** @var array<class-string, CompiledTemplate> */
+    private static array $compiledTemplateCache = [];
 
     /**
      * Pre-rendered HTML of the content a parent template placed between a
@@ -50,14 +55,30 @@ abstract class BaseComponent
 
     public function render(): string
     {
-        $renderer = self::$rendererCache[static::class] ??= $this->compileRenderer();
+        $compiled = self::compiledTemplateFor(static::class);
 
-        return $renderer->call($this, $this);
+        return $compiled->render->call($this, $this);
     }
 
-    private function compileRenderer(): \Closure
+    /**
+     * Exposed statically (not just via `render()`) so
+     * {@see \Reactiph\Transpiler\ComponentTranspiler} can read a class's
+     * expression list without an existing instance — see ADR 0017.
+     *
+     * @param class-string<self> $class
+     */
+    public static function compiledTemplateFor(string $class): CompiledTemplate
     {
-        $ast = (new Parser())->parse($this->template());
+        return self::$compiledTemplateCache[$class] ??= self::compileTemplateFor($class);
+    }
+
+    /**
+     * @param class-string<self> $class
+     */
+    private static function compileTemplateFor(string $class): CompiledTemplate
+    {
+        $instance = new $class();
+        $ast = (new Parser())->parse($instance->template());
 
         return (new Compiler())->compile($ast);
     }

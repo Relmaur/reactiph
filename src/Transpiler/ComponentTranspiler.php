@@ -18,6 +18,15 @@ use Reactiph\Component\BaseComponent;
  * inherited `BaseComponent` methods (`render()`, `template()`) are
  * framework-internal, never client-side logic, and are excluded by name
  * regardless of where they're declared.
+ *
+ * Also assembles an `expressions` map alongside `methods`, one entry per
+ * marker index `BaseComponent::compiledTemplateFor()` recorded for this
+ * class (ADR 0017) — each a JS thunk recomputing that `{$expr}`'s value
+ * against `this`, for a hydration client to patch the DOM's comment-marked
+ * text after a bound method runs. Wrapped in the same `__phpString()`
+ * runtime helper `Template\Compiler::emitEscaped()`'s `(string)` cast uses
+ * server-side, so a boolean/etc. stringifies identically on both sides
+ * (see ADR 0014 — the bug that shim already exists to prevent).
  */
 final class ComponentTranspiler
 {
@@ -48,26 +57,45 @@ final class ComponentTranspiler
             $methodsJs[$name] = $phpToJs->transpileMethod(MethodSourceReader::read($method));
         }
 
-        return $this->assemble($componentClass, $methodsJs);
+        $compiledTemplate = BaseComponent::compiledTemplateFor($componentClass);
+
+        /** @var array<int, string> $expressionsJs */
+        $expressionsJs = [];
+
+        foreach ($compiledTemplate->expressions as $index => $phpExpr) {
+            $expressionsJs[$index] = $phpToJs->transpileExpression($phpExpr);
+        }
+
+        return $this->assemble($componentClass, $methodsJs, $expressionsJs);
     }
 
     /**
      * @param array<string, string> $methodsJs
+     * @param array<int, string> $expressionsJs
      */
-    private function assemble(string $componentClass, array $methodsJs): string
+    private function assemble(string $componentClass, array $methodsJs, array $expressionsJs): string
     {
-        $entries = [];
+        $methodEntries = [];
 
         foreach ($methodsJs as $name => $js) {
             // $js is already a full named function expression
             // ("function increment() {...}"), valid directly as an
             // object property's value.
-            $entries[] = var_export($name, true) . ': ' . rtrim($js, "\n");
+            $methodEntries[] = var_export($name, true) . ': ' . rtrim($js, "\n");
         }
 
-        $methodsObject = $entries === [] ? '{}' : "{\n" . implode(",\n", $entries) . "\n}";
+        $methodsObject = $methodEntries === [] ? '{}' : "{\n" . implode(",\n", $methodEntries) . "\n}";
+
+        $expressionEntries = [];
+
+        foreach ($expressionsJs as $index => $js) {
+            $expressionEntries[] = $index . ': function () { return __phpString(' . $js . '); }';
+        }
+
+        $expressionsObject = $expressionEntries === [] ? '{}' : "{\n" . implode(",\n", $expressionEntries) . "\n}";
 
         return 'window.ReactiphComponents = window.ReactiphComponents || {};' . "\n"
-            . 'window.ReactiphComponents[' . var_export($componentClass, true) . '] = { methods: ' . $methodsObject . ' };' . "\n";
+            . 'window.ReactiphComponents[' . var_export($componentClass, true) . '] = { methods: ' . $methodsObject
+            . ', expressions: ' . $expressionsObject . ' };' . "\n";
     }
 }
