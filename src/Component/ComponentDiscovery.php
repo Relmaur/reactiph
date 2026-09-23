@@ -45,9 +45,22 @@ final class ComponentDiscovery
      */
     public static function registerDirectory(string $directory): void
     {
-        foreach (self::findComponentClasses($directory) as $class) {
+        foreach (self::classesInDirectory($directory) as $class) {
             ComponentRegistry::register((new \ReflectionClass($class))->getShortName(), $class);
         }
+    }
+
+    /**
+     * The same scan {@see registerDirectory()} runs, exposed as data
+     * instead of a `ComponentRegistry` side effect — for a caller that
+     * wants the discovered class list itself, like `bin/reactiph build`
+     * (Part 8), rather than tag-name registration.
+     *
+     * @return list<class-string<BaseComponent>>
+     */
+    public static function classesInDirectory(string $directory): array
+    {
+        return self::findComponentClasses($directory);
     }
 
     /**

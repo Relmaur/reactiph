@@ -217,6 +217,23 @@ section is the short version.
   theme-side. An actual RPC round-trip against a live site is still
   unverified (the demo component never needs one); see `docs/STATUS.md`.
   (ADR 0021)
+- **`bin/reactiph`** — the real CLI, three subcommands: `compile
+  <ComponentClass>` (transpile one component, print its JS — a fast
+  single-component check and a CI-friendly way to catch a real
+  `ReactiphException` before it ships), `build <source-dir> <output-dir>`
+  (discover every component under a directory and transpile each into a
+  static `<ShortClassName>.js` file plus a `manifest.json` — the concrete
+  fix ADR 0021 deferred for hosts needing a real static file instead of
+  request-time transpilation), and `watch <source-dir> <output-dir>`
+  (reruns `build` whenever a `.php`/`.reactiph.html` file's mtime changes,
+  polling rather than depending on a native filesystem-events extension).
+  No config file and no console-framework dependency — three positional
+  arguments per subcommand cover every real scenario so far; revisit both
+  if that changes. `Application` writes to injected stdout/stderr streams
+  for testability, but `bin/reactiph` itself is also exercised as a real
+  process invocation (`proc_open`, not just an in-process call) since a
+  stream substitution doesn't prove the shebang/argv/autoload-bootstrap
+  wiring actually works. (ADR 0022)
 
 ## Build order
 
@@ -230,7 +247,8 @@ verified, with explicit go-ahead before the next.
 5. Reactive client runtime (replaces the Part 3 stub with real transpiled components).
 6. Bridge abstraction + `DefaultBridge` (framework-agnostic, end-to-end example).
 7. `reactiph/wordpress-bridge` package.
-8. CLI/dev tooling (watch mode, production build) + docs.
+8. CLI/dev tooling (watch mode, production build) + docs. **Done** — see
+   ADR 0022. Docs half covered separately by the `reactiph-docs` site.
 
 **Verification per part:** PHPUnit passing for anything server-side. For
 Parts 3-6 specifically, a live check is additionally required — a
@@ -256,6 +274,9 @@ php examples/errors.php    # run the exception-foundation smoke test
 php examples/hydrate.php   # generate examples/hydrate-output.html (Parts 3 & 5) — open it in a browser
 php -S localhost:8080 examples/bridge-server.php   # Part 6 end-to-end Bridge demo — open http://localhost:8080/
 php examples/folder-components.php   # folder-based component discovery + sibling-file template demo (ADR 0020)
+php bin/reactiph compile ReactiphExamples\\Greeting   # transpile one component, print its JS (ADR 0022)
+php bin/reactiph build examples/folder-based /tmp/reactiph-build   # transpile every component under a directory to static JS + a manifest
+php bin/reactiph watch examples/folder-based /tmp/reactiph-build   # rebuild whenever a component file changes
 ```
 
 `packages/wordpress-bridge/` and `examples/wordpress-plugin/` are their

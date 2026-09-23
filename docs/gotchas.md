@@ -278,3 +278,35 @@ deliberate, matching `wordpress-bridge`'s existing pattern) — the
 `reactiph-docs` `taw-bridge.mdx` page and `examples/taw-block/`'s own
 `README` (if one gets added) need to say this explicitly rather than
 assuming it's obvious from `wordpress-bridge`'s docs alone.
+
+## Part 8 — CLI
+
+### `WatchCommand::watch()`'s mtime baseline has to be captured before the initial build, not after
+
+First draft ran the initial build, *then* took the baseline mtime
+snapshot. Writing `WatchCommandTest`'s "rebuilds when a file changes"
+case surfaced why that's wrong: the test simulates a file change from
+inside the `onBuild` callback (the only hook point available, since
+`watch()` blocks synchronously) right after the first build completes.
+With the snapshot taken *after* that callback ran, the simulated change
+was already baked into the very baseline the next poll compared against
+— so no difference was ever detected, and the test failed with zero
+rebuilds instead of the expected two. Reordering to snapshot-then-build
+fixed it, and is arguably the more correct behavior anyway: nothing that
+happens during the initial build should be silently treated as "no
+change yet." Worth remembering for any similar polling-loop code —
+whatever establishes a "before" baseline has to run strictly before
+anything that could itself cause a "change," including a caller's own
+side effects in a callback.
+
+### `touch()`'s one-second mtime resolution can make a real change invisible to a fast test
+
+A test that touches a file and immediately re-checks its mtime can flake
+depending on filesystem mtime resolution — `touch()` (and `filemtime()`)
+work in whole seconds, so two touches within the same wall-clock second
+can produce an identical mtime even though real time passed and the file
+really did change. `WatchCommandTest`'s change-detection test explicitly
+sets the new mtime to `$originalMtime + 1` rather than calling bare
+`touch()` and hoping enough real time elapsed, to make the test
+deterministic instead of occasionally flaky depending on how fast the
+test runner happens to execute.

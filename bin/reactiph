@@ -1,0 +1,30 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+// Two places autoload.php can be, depending on whether this script is
+// running from reactiph/reactiph's own working copy (this repo) or from
+// inside another project's vendor/reactiph/reactiph/bin/ after a real
+// Composer install.
+$autoloadCandidates = [
+    __DIR__ . '/../vendor/autoload.php',
+    __DIR__ . '/../../../autoload.php',
+];
+
+$autoloadFound = false;
+
+foreach ($autoloadCandidates as $candidate) {
+    if (is_file($candidate)) {
+        require $candidate;
+        $autoloadFound = true;
+        break;
+    }
+}
+
+if (!$autoloadFound) {
+    fwrite(STDERR, "Could not locate vendor/autoload.php -- run `composer install` first.\n");
+    exit(1);
+}
+
+exit((new Reactiph\Cli\Application())->run($argv));

@@ -7,9 +7,36 @@ history. See `CLAUDE.md` for the full build order and working agreement.
 
 ## Current work
 
-**`reactiph/taw-bridge` (ADR 0021) — built, tested against the real
-`taw/core`, and now live-verified end to end against a real TAW site.**
-Not one of the original 8
+**Part 8 — `bin/reactiph` CLI (ADR 0022). Done.** Three subcommands:
+`compile <ComponentClass>` (transpile one component, print its JS),
+`build <source-dir> <output-dir>` (discover every component under a
+directory and transpile each into a static `<ShortClassName>.js` file
+plus a `manifest.json`), and `watch <source-dir> <output-dir>` (reruns
+`build` on file change, polling mtimes). This is the concrete fix ADR
+0021 deferred — a host now has real static files + a manifest to point at
+instead of request-time transpilation, though wiring any specific bridge
+to prefer them is still separate, undone work. No config file, no
+console-framework dependency. `ComponentDiscovery::classesInDirectory()`
+is new public API (the same scan `registerDirectory()` already ran,
+exposed as data). Tested at both the command level (injected
+stdout/stderr streams) and as a real process invocation
+(`tests/Cli/BinExecutableTest.php`, via `proc_open` against the actual
+`bin/reactiph` executable) — 15 new tests, all passing; PHPStan (level 8)
+and PHP-CS-Fixer clean. One real bug caught and fixed while writing tests
+for `watch`: the mtime baseline was captured *after* the initial build
+ran instead of before, which could silently absorb a change into the
+baseline it's supposed to be compared against — see `docs/gotchas.md`.
+Docs half of Part 8 already covered separately by the `reactiph-docs`
+site; not yet pinged about this CLI specifically.
+
+**All 8 original build-order parts are now done.** What's left is the one
+still-open verification thread below, plus the "Open threads" list, which
+are refinements/extensions rather than unbuilt parts.
+
+## `reactiph/taw-bridge` (ADR 0021)
+
+Built, tested against the real `taw/core`, and live-verified end to end
+against a real TAW site. Not one of the original 8
 build-order parts, and not an extension of `wordpress-bridge` — the user
 explicitly rejected the shortcode as their real integration point and
 asked to rethink WordPress support as a TAW-specific one instead,
@@ -121,8 +148,8 @@ mechanics themselves; only the one wiring gap already flagged below.
 
 ## Next up
 
-Two threads are live and unstarted, none with a user go-ahead yet for
-which to pick up:
+One thread is live and unstarted, with no user go-ahead yet to pick it
+up:
 
 1. **A live RPC round-trip against a real WordPress/TAW site** — narrower
    than the original Part 7 ask now that the SSR/hydration/asset-serving
@@ -130,15 +157,12 @@ which to pick up:
    component whose method needs real server state (like Part 6's
    `Guestbook`) exercised through a real `wp_rest`-nonce-gated REST call,
    not just a client-transpiled one like `Counter`.
-2. **Part 8 — CLI/dev tooling + docs.** Docs half now covered by the
-   separate `reactiph-docs` site. The CLI itself doesn't exist yet — and
-   is also where a real fix for the "dynamic component JS vs. Vite's
-   static pipeline" mismatch would naturally live.
 
 ## Remaining parts (unstarted)
 
-8. CLI/dev tooling + docs (docs half now substantially covered by the
-   separate `reactiph-docs` site).
+None — all 8 original build-order parts are done (Part 8 — CLI/dev
+tooling — shipped this session, ADR 0022). Remaining work lives in "Next
+up" above and "Open threads" below instead.
 
 ## Open threads / not yet decided
 
@@ -169,10 +193,22 @@ which to pick up:
   round-trip — see "Next up".
 - A Gutenberg block is still unbuilt (ADR 0004/0019).
 - `ComponentDiscovery::registerDirectory()` is an uncached, per-request
-  filesystem scan (ADR 0020).
+  filesystem scan (ADR 0020) — `bin/reactiph build` (ADR 0022) can produce
+  a static manifest now, but nothing at *runtime* reads it back instead of
+  rescanning; that's a separate, still-undone wiring decision.
 - Folder-based component styles have nowhere to be served from yet (ADR
   0020) — same underlying gap blocking real Vite integration for
   `taw-bridge`'s dynamic component JS (ADR 0021).
+- **`bin/reactiph build`'s static output has no invalidation mechanism**
+  (ADR 0022) — nothing detects or warns when a component's PHP has changed
+  since the last `build`, so a stale `.js` file can silently drift from
+  what the component would transpile to today. Previously impossible,
+  since every render always re-transpiled live; now possible wherever a
+  host is wired to prefer the static build output (nothing is, yet).
+- No specific bridge is wired to consume `bin/reactiph build`'s
+  `manifest.json` instead of transpiling at request time (ADR 0022) —
+  `wordpress-bridge` and `taw-bridge` both still call
+  `ComponentTranspiler` live, same as before this CLI existed.
 - **The `taw-bridge` → `taw/core` path repository is a local-machine
   convenience** (ADR 0021) — not a portable dependency; needs a real
   VCS/Packagist reference before anyone else could install this package.

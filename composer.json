@@ -23,6 +23,9 @@
             "ReactiphExamples\\": "examples/folder-based/"
         }
     },
+    "bin": [
+        "bin/reactiph"
+    ],
     "scripts": {
         "test": "phpunit",
         "analyse": "phpstan analyse",
