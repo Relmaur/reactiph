@@ -84,28 +84,56 @@ final class PhpToJsTest extends TestCase
         (new PhpToJs())->transpileMethod('public function ne(): bool { return $this->a != $this->b; }');
     }
 
-    public function testRejectsPropertyWritesWithAHelpfulHint(): void
+    public function testTranspilesPropertyWrites(): void
     {
-        try {
-            (new PhpToJs())->transpileMethod('public function set(): void { $this->a = 1; }');
-            self::fail('Expected a TranspileException.');
-        } catch (TranspileException $e) {
-            self::assertSame('transpiler.property_write_unsupported', $e->code());
-        }
+        $js = (new PhpToJs())->transpileMethod('public function set(): void { $this->a = 1; }');
+
+        self::assertSame("function set() {\nthis.a = 1;\n}\n", $js);
     }
 
-    public function testRejectsLoops(): void
+    public function testTranspilesMethodCallsWithPositionalArguments(): void
+    {
+        $js = (new PhpToJs())->transpileMethod('public function call(): mixed { return $this->helper($this->a); }');
+
+        self::assertSame("function call() {\nreturn this.helper(this.a);\n}\n", $js);
+    }
+
+    public function testRejectsMethodCallsWithNamedArguments(): void
     {
         $this->expectException(TranspileException::class);
 
-        (new PhpToJs())->transpileMethod('public function loop(): void { for ($i = 0; $i < 10; $i++) {} }');
+        (new PhpToJs())->transpileMethod('public function call(): mixed { return $this->helper(x: 1); }');
     }
 
-    public function testRejectsMethodCalls(): void
+    public function testTranspilesPreAndPostIncrementDecrement(): void
     {
-        $this->expectException(TranspileException::class);
+        $js = (new PhpToJs())->transpileMethod(
+            'public function all(): void { $i = 0; $i++; ++$i; $i--; --$i; }',
+        );
 
-        (new PhpToJs())->transpileMethod('public function call(): mixed { return $this->helper(); }');
+        self::assertStringContainsString('i++;', $js);
+        self::assertStringContainsString('++i;', $js);
+        self::assertStringContainsString('i--;', $js);
+        self::assertStringContainsString('--i;', $js);
+    }
+
+    public function testTranspilesAWhileLoop(): void
+    {
+        $js = (new PhpToJs())->transpileMethod(
+            'public function loop(): void { $i = 0; while ($i < 3) { $i++; } }',
+        );
+
+        self::assertStringContainsString('while (__phpBool((i < 3))) {', $js);
+    }
+
+    public function testTranspilesAForLoopAndHoistsItsCounter(): void
+    {
+        $js = (new PhpToJs())->transpileMethod(
+            'public function loop(): void { for ($i = 0; $i < 3; $i++) { $this->a = $i; } }',
+        );
+
+        self::assertStringContainsString('let i;', $js);
+        self::assertStringContainsString('for (i = 0; __phpBool((i < 3)); i++) {', $js);
     }
 
     public function testRejectsArrayLiterals(): void
@@ -115,11 +143,25 @@ final class PhpToJsTest extends TestCase
         (new PhpToJs())->transpileMethod('public function arr(): array { return [1, 2, 3]; }');
     }
 
+    public function testRejectsForeach(): void
+    {
+        $this->expectException(TranspileException::class);
+
+        (new PhpToJs())->transpileMethod('public function loop(): void { foreach ($this->items as $item) {} }');
+    }
+
+    public function testRejectsPlainFunctionCalls(): void
+    {
+        $this->expectException(TranspileException::class);
+
+        (new PhpToJs())->transpileMethod('public function len(): int { return strlen($this->name); }');
+    }
+
     public function testUnsupportedConstructExceptionCarriesLineNumber(): void
     {
         try {
             (new PhpToJs())->transpileMethod(
-                "public function loop(): void {\n    for (\$i = 0; \$i < 10; \$i++) {}\n}",
+                "public function loop(): void {\n    foreach (\$this->items as \$item) {}\n}",
             );
             self::fail('Expected a TranspileException.');
         } catch (TranspileException $e) {

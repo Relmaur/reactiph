@@ -7,57 +7,60 @@ history. See `CLAUDE.md` for the full build order and working agreement.
 
 ## Current part
 
-**Part 4 — PHP→JS transpiler MVP: slice 1 done and verified; paused at
-the agreed checkpoint, awaiting go-ahead to expand scope.**
+**Part 4 — PHP→JS transpiler MVP: slices 1-2 done and verified. Arrays,
+`foreach`, and stdlib builtins are the only pieces of the plan's original
+subset left.**
 
 Per the plan's "timeboxed spike, confirm scope is holding" instruction,
 asked the user how they wanted the checkpoint to work rather than
-assuming; they chose building a small core subset first, proving the
-whole pipeline end-to-end, then pausing to report before continuing —
-this entry is that report.
+assuming; they chose small-slice-first. After slice 1 landed, they said to
+commit it and keep expanding without another explicit stop-and-ask each
+time — this entry reflects that continued work.
 
-- `Transpiler\PhpToJs::transpileMethod()`: transpiles one PHP method's
-  source to an equivalent JS function. Supports: property/local-variable
-  reads, arithmetic (`+ - * / %`), **strict** comparison (`=== !==`),
+- `Transpiler\PhpToJs::transpileMethod()` now supports: reading or
+  writing a property (`$this->prop`) or local variable, `$this->method()`
+  calls with **positional arguments only**, arithmetic (`+ - * / %`),
+  increment/decrement (`++ --`), **strict** comparison (`=== !==`),
   relational comparison (`< <= > >=`), boolean ops (`&& || !`), string
-  concatenation (`.`), local variable assignment, `if`/`elseif`/`else`,
-  `return`. Everything else (loops, arrays, `$this->method()` calls,
-  property *writes*, loose `==`/`!=`) throws `TranspileException` — a
-  compile-time error, never silently-wrong JS, per ADR 0003.
-- Two real PHP/JS semantic gaps handled deliberately, not glossed over:
-  PHP's `"0"`-string-is-falsy truthiness (JS disagrees) is replicated via
-  a `__phpBool()` runtime shim (`packages/runtime-js/php-runtime.js`), and
-  loose comparison is rejected outright rather than approximated. See ADR
-  0011 for the full reasoning and the parity tests that specifically
-  probe this.
-- **Parity suite built from day one of this part, per ADR 0006** — not
-  after: `ParityTest` runs the exact same method (read via Reflection
-  from a real fixture class, never duplicated as a separate string) through
-  real PHP and through transpiled-JS-in-Node, asserting identical results.
-  14 cases, including the two truthiness-divergence cases that would fail
-  without `__phpBool`. Test-only `NodeRunner` helper shells out to `node`.
-- `nikic/php-parser` promoted from a transitive (PHPUnit) dependency to a
-  direct one, per ADR 0002.
-- CI (`.github/workflows/ci.yml`) now installs Node — the parity suite is
-  a required test dependency from this part onward, not just local
-  tooling.
-- 71 PHPUnit tests passing (27 new: 13 unit tests on `PhpToJs`'s output
-  shape and allow-list enforcement, 14 parity cases). PHPStan (level 8)
+  concatenation (`.`), `if`/`elseif`/`else`, `while`, `for` (single
+  expression per clause only), and `return`.
+- Still rejected, with a clear compile-time `TranspileException`: arrays
+  (literals and access), `foreach`, loose `==`/`!=`, named/variadic
+  method-call arguments, multi-expression `for` clauses.
+- PHP/JS semantic gaps handled deliberately (ADR 0011): PHP's
+  `"0"`-string-is-falsy truthiness replicated via a `__phpBool()` runtime
+  shim rather than JS's native truthiness; loose comparison rejected
+  outright rather than approximated.
+- Parity suite (ADR 0006) now covers property writes, method-to-method
+  calls (`NodeRunner` extended to attach multiple transpiled methods onto
+  one JS `this` context — see ADR 0012), `while` loops, and `for` loops,
+  alongside slice 1's cases. 20 parity cases total. A real test-harness
+  ordering bug surfaced along the way (JS-side state snapshotted *after*
+  calling a mutating PHP method instead of before) — fixed; see
+  `docs/gotchas.md`.
+- 82 PHPUnit tests passing (38 in `tests/Transpiler/`). PHPStan (level 8)
   and PHP-CS-Fixer both clean.
-- Not yet committed — commits happen on explicit user request; this
-  checkpoint report comes before that ask, in case the user wants changes
-  before it's captured in a commit.
+- Committed and pushed to `origin/main` through slice 1
+  (`df9bb96`); slice 2 (property writes/method calls/loops) not yet
+  committed as of this status update.
 
 ## Next up
 
-**Part 4 continued — expand the transpiler's supported subset**, pending
-user go-ahead. Deferred from slice 1: `for`/`foreach`/`while` loops,
-array literals/access, `$this->method()` calls, property *writes*
-(`$this->prop = ...`), and the ~15-20 builtin stdlib shims
-(`Transpiler\Stdlib`, not yet started). Each addition should ship with a
-parity test, per ADR 0006 — the truthiness-shim precedent in ADR 0011 is
-the model for how to handle any other spot where PHP and JS quietly
-disagree, rather than assuming a construct transpiles safely by default.
+**Part 4 continued — arrays, `foreach`, and stdlib builtins.** This is
+flagged (ADR 0012) as genuinely more complex than what's landed so far:
+PHP arrays are simultaneously ordered lists and string-keyed maps, with no
+single JS type covering both faithfully. Needs a real design decision —
+likely JS `Array` for sequential-integer-key ("list") arrays and plain
+`Object` for associative ones, rejecting mixed/gapped-key arrays outright
+— plus a runtime `foreach` helper that dispatches between the two at
+runtime, and its own parity tests. Given this is a materially different
+kind of complexity than loops/calls/writes were, worth treating as its
+own checkpoint before broader implementation, consistent with this part's
+"highest risk, timeboxed spike" framing — not assumed to be a quick
+follow-on.
+
+After that: the ~15-20 builtin stdlib shims (`Transpiler\Stdlib`, not yet
+started).
 
 Once the transpiler's scope is where the plan wants it: **Part 5 —
 Reactive client runtime**, replacing Part 3's hand-written `Counter` stub
@@ -93,12 +96,10 @@ expressions exist) and a minimal scoped DOM patch step.
   client as hydration state vs. stay server-only (ADR 0010) — everything
   public except `slot`/`hydrationId` is serialized today.
 - `packages/runtime-js` has no `package.json`/npm tooling yet — deferred
-  deliberately until Part 5 needs real JS build tooling; Part 3's stub and
-  Part 4's runtime helper are single plain `.js` files with no
-  dependencies.
-- Transpiler slice 1 deliberately doesn't cover loops, arrays, method
-  calls, or property writes (see "Next up") — a component method needing
-  any of those can't be transpiled yet.
+  deliberately until Part 5 needs real JS build tooling.
+- How JS array-vs-object array representation gets decided is the
+  explicit next design question (see "Next up") — not yet a locked-in
+  decision, don't assume a shape for it.
 - `(click)="method"` event-binding template syntax (shown in the plan's
   own example and in `CLAUDE.md`'s opening description) doesn't exist yet
   in `Template\Parser` — needed for Part 5, not designed yet.

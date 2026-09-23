@@ -80,15 +80,16 @@ section is the short version.
   silently inert otherwise (a known limitation, not yet an error). (ADR
   0010)
 - **The transpiler is being built in scope-checkpointed slices, not all at
-  once**: slice 1 covers property/variable reads, arithmetic, strict
-  comparison, boolean ops, string concat, and `if`/`elseif`/`else` —
-  loops, arrays, method calls, and property writes are explicitly
-  deferred. PHP and JS truthiness/equality diverge in real, not
-  theoretical ways (e.g. the string `"0"` is falsy in PHP, truthy in JS);
-  transpiled code never relies on JS's native truthiness for `if`/`&&`/
-  `||`/`!`, routing through a `__phpBool()` runtime shim instead, and
-  loose comparison (`==`/`!=`) is rejected outright rather than
-  approximated. (ADR 0011)
+  once**: reads/writes of properties and local variables, method calls
+  (positional args only), arithmetic, increment/decrement, strict
+  comparison, boolean ops, string concat, `if`/`elseif`/`else`, `while`,
+  and `for` are supported; arrays, `foreach`, and stdlib builtins are the
+  remaining, deliberately-deferred piece (see `docs/STATUS.md`). PHP and
+  JS truthiness/equality diverge in real, not theoretical ways (e.g. the
+  string `"0"` is falsy in PHP, truthy in JS); transpiled code never
+  relies on JS's native truthiness for `if`/`&&`/`||`/`!`, routing through
+  a `__phpBool()` runtime shim instead, and loose comparison (`==`/`!=`)
+  is rejected outright rather than approximated. (ADR 0011, ADR 0012)
 
 ## Build order
 

@@ -64,4 +64,45 @@ final class ParityFixture
 
         return $result;
     }
+
+    public function incrementA(): int
+    {
+        $this->a = $this->a + 1;
+
+        return $this->a;
+    }
+
+    public function double(): int
+    {
+        return $this->a * 2;
+    }
+
+    public function quadruple(): int
+    {
+        return $this->double() + $this->double();
+    }
+
+    public function sumUpTo(): int
+    {
+        $i = 1;
+        $total = 0;
+
+        while ($i <= $this->a) {
+            $total = $total + $i;
+            $i++;
+        }
+
+        return $total;
+    }
+
+    public function countDownSteps(): int
+    {
+        $steps = 0;
+
+        for ($i = $this->a; $i > 0; $i--) {
+            $steps++;
+        }
+
+        return $steps;
+    }
 }

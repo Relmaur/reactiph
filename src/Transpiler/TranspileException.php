@@ -61,15 +61,4 @@ final class TranspileException extends \RuntimeException implements ReactiphExce
         );
     }
 
-    public static function propertyWriteNotSupported(Node $node): self
-    {
-        $e = new self('Writing to a property ($this->prop = ...) is not yet supported for transpilation.');
-
-        return $e->withDiagnostics(
-            'transpiler.property_write_unsupported',
-            ['line' => $node->getStartLine()],
-            'Only property reads are supported in this slice of the transpiler; property writes are planned '
-                . 'for a later slice (see docs/STATUS.md).',
-        );
-    }
 }

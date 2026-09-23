@@ -21,27 +21,49 @@ use Reactiph\Transpiler\PhpToJs;
  */
 final class ParityTest extends TestCase
 {
+    /**
+     * @param array<string, mixed> $properties
+     * @param string[] $supportingMethods Other fixture methods the method
+     *   under test calls on $this — also transpiled and attached onto the
+     *   same JS context, so the call resolves at runtime.
+     */
     #[DataProvider('cases')]
-    public function testTranspiledJsMatchesRealPhp(string $method, array $properties): void
-    {
+    public function testTranspiledJsMatchesRealPhp(
+        string $method,
+        array $properties,
+        array $supportingMethods = [],
+    ): void {
         $fixture = new ParityFixture();
 
         foreach ($properties as $name => $value) {
             $fixture->{$name} = $value;
         }
 
+        // Captured before calling the method: some methods under test
+        // (e.g. incrementA) mutate the fixture's own properties, and the
+        // JS side must start from the same pre-call state PHP did, not
+        // whatever's left over afterward.
+        $initialState = get_object_vars($fixture);
+
         $phpResult = $fixture->{$method}();
 
-        $source = self::methodSource(ParityFixture::class, $method);
-        $js = (new PhpToJs())->transpileMethod($source);
+        $transpiler = new PhpToJs();
+        $js = $transpiler->transpileMethod(self::methodSource(ParityFixture::class, $method));
 
-        $jsResult = NodeRunner::call($js, $method, get_object_vars($fixture));
+        $supportingJs = [];
+        foreach ($supportingMethods as $supportingMethod) {
+            $supportingJs[$supportingMethod] = $transpiler->transpileMethod(
+                self::methodSource(ParityFixture::class, $supportingMethod),
+            );
+        }
+
+        $jsResult = NodeRunner::call($js, $method, $initialState, $supportingJs);
 
         self::assertSame($phpResult, $jsResult, "PHP vs transpiled-JS mismatch for {$method}()");
     }
 
     /**
-     * @return iterable<string, array{0: string, 1: array<string, mixed>}>
+     * @return iterable<string, array{0: string, 1: array<string, mixed>, 2?: string[]}>
      */
     public static function cases(): iterable
     {
@@ -68,6 +90,17 @@ final class ParityTest extends TestCase
         yield 'if/elseif/else: big branch' => ['branching', ['a' => 50]];
         yield 'if/elseif/else: small branch' => ['branching', ['a' => 5]];
         yield 'if/elseif/else: non-positive branch' => ['branching', ['a' => -1]];
+
+        yield 'property write then read' => ['incrementA', ['a' => 4]];
+
+        yield 'method call: $this->method() resolves on the same object' =>
+            ['quadruple', ['a' => 3], ['double']];
+
+        yield 'while loop accumulating a sum' => ['sumUpTo', ['a' => 5]];
+        yield 'while loop: zero iterations' => ['sumUpTo', ['a' => 0]];
+
+        yield 'for loop with a decrementing counter' => ['countDownSteps', ['a' => 4]];
+        yield 'for loop: zero iterations' => ['countDownSteps', ['a' => 0]];
     }
 
     /**

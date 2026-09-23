@@ -15,21 +15,24 @@ use PhpParser\ParserFactory;
  * for the same method to run identically on the server (as real PHP) and
  * on the client (as this transpiled JS) — see ADR 0001.
  *
- * Supports an explicit, documented subset of PHP (ADR 0003): reading a
- * property (`$this->prop`) or local variable, arithmetic (`+ - * / %`),
- * strict comparison (`=== !==`), relational comparison (`< <= > >=`),
- * boolean operators (`&& || !`), string concatenation (`.`), local
- * variable assignment, `if`/`elseif`/`else`, and `return`. Anything else —
- * loops, arrays, method calls, property writes, loose comparison — throws
- * {@see TranspileException} rather than producing wrong JS. See ADR 0011
- * for why this particular slice, and for the PHP/JS semantic gaps
- * (truthiness, loose equality) it works around rather than ignores.
+ * Supports an explicit, documented subset of PHP (ADR 0003): reading or
+ * writing a property (`$this->prop`) or local variable, method calls with
+ * positional arguments (`$this->method(...)`), arithmetic (`+ - * / %`),
+ * increment/decrement (`++ --`), strict comparison (`=== !==`), relational
+ * comparison (`< <= > >=`), boolean operators (`&& || !`), string
+ * concatenation (`.`), `if`/`elseif`/`else`, `while`, `for`, and `return`.
+ * Anything else — arrays, `foreach`, loose comparison, named/variadic
+ * arguments — throws {@see TranspileException} rather than producing
+ * wrong JS. See ADR 0011 for why this particular subset, and for the
+ * PHP/JS semantic gaps (truthiness, loose equality) it works around
+ * rather than ignores; see `docs/STATUS.md` for what's deferred.
  *
  * PHP variables are function-scoped, not block-scoped, so every local
- * variable the method assigns anywhere is hoisted to a single `let`
- * declaration at the top of the generated JS function — this matters for
- * a variable assigned inside an `if` branch and read after it, which
- * would otherwise be out of scope in JS (`let` is block-scoped there).
+ * variable the method assigns anywhere — including a `for` loop's own
+ * counter — is hoisted to a single `let` declaration at the top of the
+ * generated JS function — this matters for a variable assigned inside an
+ * `if` branch and read after it, which would otherwise be out of scope in
+ * JS (`let` is block-scoped there).
  */
 final class PhpToJs
 {
@@ -98,6 +101,23 @@ final class PhpToJs
                     $this->collectLocalVariables($stmt->else->stmts);
                 }
             }
+
+            if ($stmt instanceof Stmt\While_) {
+                $this->collectLocalVariables($stmt->stmts);
+            }
+
+            if ($stmt instanceof Stmt\For_) {
+                foreach ($stmt->init as $initExpr) {
+                    if ($initExpr instanceof Expr\Assign
+                        && $initExpr->var instanceof Expr\Variable
+                        && is_string($initExpr->var->name)
+                    ) {
+                        $this->declaredLocals[$initExpr->var->name] = true;
+                    }
+                }
+
+                $this->collectLocalVariables($stmt->stmts);
+            }
         }
     }
 
@@ -120,6 +140,8 @@ final class PhpToJs
         return match (true) {
             $stmt instanceof Stmt\Return_ => $this->compileReturn($stmt),
             $stmt instanceof Stmt\If_ => $this->compileIf($stmt),
+            $stmt instanceof Stmt\While_ => $this->compileWhile($stmt),
+            $stmt instanceof Stmt\For_ => $this->compileFor($stmt),
             $stmt instanceof Stmt\Expression => $this->compileExpr($stmt->expr) . ";\n",
             default => throw TranspileException::unsupportedConstruct($stmt),
         };
@@ -153,12 +175,41 @@ final class PhpToJs
         return $code . "\n";
     }
 
+    private function compileWhile(Stmt\While_ $stmt): string
+    {
+        $code = 'while (' . $this->wrapBool($this->compileExpr($stmt->cond)) . ") {\n";
+        $code .= $this->compileStatements($stmt->stmts);
+
+        return $code . "}\n";
+    }
+
+    private function compileFor(Stmt\For_ $stmt): string
+    {
+        if (count($stmt->cond) > 1 || count($stmt->init) > 1 || count($stmt->loop) > 1) {
+            throw TranspileException::unsupportedConstruct($stmt);
+        }
+
+        $init = $stmt->init === [] ? '' : $this->compileExpr($stmt->init[0]);
+        $cond = $stmt->cond === [] ? '' : $this->wrapBool($this->compileExpr($stmt->cond[0]));
+        $loop = $stmt->loop === [] ? '' : $this->compileExpr($stmt->loop[0]);
+
+        $code = "for ({$init}; {$cond}; {$loop}) {\n";
+        $code .= $this->compileStatements($stmt->stmts);
+
+        return $code . "}\n";
+    }
+
     private function compileExpr(Expr $expr): string
     {
         return match (true) {
             $expr instanceof Expr\Variable => $this->compileVariable($expr),
             $expr instanceof Expr\PropertyFetch => $this->compilePropertyFetch($expr),
             $expr instanceof Expr\Assign => $this->compileAssign($expr),
+            $expr instanceof Expr\MethodCall => $this->compileMethodCall($expr),
+            $expr instanceof Expr\PreInc => '++' . $this->compileExpr($expr->var),
+            $expr instanceof Expr\PostInc => $this->compileExpr($expr->var) . '++',
+            $expr instanceof Expr\PreDec => '--' . $this->compileExpr($expr->var),
+            $expr instanceof Expr\PostDec => $this->compileExpr($expr->var) . '--',
             $expr instanceof Expr\BooleanNot => '!' . $this->wrapBool($this->compileExpr($expr->expr)),
             $expr instanceof Expr\BinaryOp\BooleanAnd => $this->compileBooleanOp($expr, '&&'),
             $expr instanceof Expr\BinaryOp\BooleanOr => $this->compileBooleanOp($expr, '||'),
@@ -202,17 +253,35 @@ final class PhpToJs
         return $this->compileExpr($expr->var) . '.' . $expr->name->toString();
     }
 
-    private function compileAssign(Expr\Assign $expr): string
+    private function compileMethodCall(Expr\MethodCall $expr): string
     {
-        if ($expr->var instanceof Expr\PropertyFetch) {
-            throw TranspileException::propertyWriteNotSupported($expr);
-        }
-
-        if (!$expr->var instanceof Expr\Variable) {
+        if (!$expr->name instanceof Node\Identifier) {
             throw TranspileException::unsupportedConstruct($expr);
         }
 
-        return $this->compileVariable($expr->var) . ' = ' . $this->compileExpr($expr->expr);
+        $args = array_map(
+            function (Node $arg) use ($expr): string {
+                if (!$arg instanceof Node\Arg || $arg->name !== null || $arg->unpack) {
+                    throw TranspileException::unsupportedConstruct($expr);
+                }
+
+                return $this->compileExpr($arg->value);
+            },
+            $expr->args,
+        );
+
+        return $this->compileExpr($expr->var) . '.' . $expr->name->toString() . '(' . implode(', ', $args) . ')';
+    }
+
+    private function compileAssign(Expr\Assign $expr): string
+    {
+        $target = match (true) {
+            $expr->var instanceof Expr\Variable => $this->compileVariable($expr->var),
+            $expr->var instanceof Expr\PropertyFetch => $this->compilePropertyFetch($expr->var),
+            default => throw TranspileException::unsupportedConstruct($expr),
+        };
+
+        return $target . ' = ' . $this->compileExpr($expr->expr);
     }
 
     private function compileBinaryOp(Expr\BinaryOp $expr, string $operator): string

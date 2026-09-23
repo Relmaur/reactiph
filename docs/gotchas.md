@@ -136,3 +136,18 @@ counting `dirname()` calls *starting from the directory `__DIR__` already
 is*, which is one hop shorter. Worth double-checking with a quick
 `var_dump(dirname(__DIR__, N))` (or just running the test and reading the
 error) rather than trusting mental arithmetic here.
+
+### A parity test for a *mutating* method must snapshot JS state before, not after, calling the real PHP method
+
+`ParityTest`'s `incrementA` case (property write: `$this->a = $this->a + 1;
+return $this->a;`) failed with the JS side returning 6 where PHP returned
+5, for `a` starting at 4. Not a transpiler bug — a test-harness ordering
+bug: the test built the JS context with `get_object_vars($fixture)`
+*after* calling `$fixture->incrementA()`, by which point PHP had already
+mutated `$fixture->a` from 4 to 5. So the JS side started from the
+already-incremented value and produced 6. Fixed by capturing
+`get_object_vars($fixture)` *before* calling the PHP method under test.
+General lesson: once the transpiler supports property writes, every
+parity case for a mutating method needs its "before" state snapshotted
+before the PHP call, not assumed to still match the data provider's input
+array (which itself doesn't get mutated — the object does).
